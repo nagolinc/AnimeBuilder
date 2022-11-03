@@ -196,9 +196,9 @@ plot summary:
 subplot:
 {subplot:TEXT:}
 scene 1:
-{scene 1:TEXT:}
+{scene 2 previous:TEXT:}
 scene 2:
-{scene 2:TEXT:}
+{scene 3 previous:TEXT:}
 scene 3:
 {character1.name} and {character2.name} {scene 3 text:TEXT:}
 
@@ -333,5 +333,25 @@ transcript:
     character2:
     {character2:TEXT:}
     
-    """
+    """,
+    "fightScene":"""
+
+write a short screenplay
+
+character1:
+{character1}
+character2:
+{character2}
+plot summary:
+{character1.name} stars in this anime about {story synopsis:TEXT:}
+subplot:
+{subplot:TEXT:}
+scene 1:
+{character1.name} and {character2.name} get ready to battle {monster}
+scene 2:
+{character1.name} and {character3.name} battle {monster}
+scene 3:
+{character1.name} and {character4.name} celebrate after defeating {monster}
+    """,
+
 }

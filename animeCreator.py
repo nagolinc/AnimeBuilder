@@ -36,6 +36,7 @@ class AnimeBuilder:
         textModel='EleutherAI/gpt-neo-1.3B',
         diffusionModel="hakurei/waifu-diffusion",
         templates=templates,
+        advanceSceneObjects=None,
         no_repeat_ngram_size=8,
         repetition_penalty=2.0,
         num_inference_steps=30,
@@ -56,6 +57,24 @@ class AnimeBuilder:
         self.num_beams = num_beams
         self.temperature = temperature
         self.MIN_ABC = MIN_ABC
+
+        #use this for advanceScene()
+        #advance scene
+        if advanceSceneObjects is None:
+            self.advanceSceneObjects=[
+                {
+                    "object":"advancePlot",
+                    "whichScene":3,
+                    "numScenes":3,
+                },
+                {
+                    "object":"fightScene",
+                    "whichScene":1,
+                    "numScenes":3,
+                },
+            ]
+        else:
+            self.advanceSceneObjects=advanceSceneObjects
 
         print("LOADING TEXT MODEL")
 
@@ -171,18 +190,29 @@ class AnimeBuilder:
         )
         return thisObject
 
-    def advanceStory(self, story, character1=None, character2=None, genTextAmount=20):
+    def advanceStory(self, story, subplot, mainCharacter=None, supportingCharacters=None, genTextAmount=20):
+
+
+        advanceSceneObject=random.choice(self.advanceSceneObjects)
+
+        # update subplot
+        
+        character1=mainCharacter
+        character2=character2 = random.choice(supportingCharacters)
+
+
         if character1 is None:
             character1 = story.getProperty("character1")
         if character2 is None:
             character2 = story.getProperty("character2")
-        newStory = WorldObject(self.templates, self.textGenerator, "advancePlot", objects={
+        newStory = WorldObject(self.templates, self.textGenerator, advanceSceneObject['object'], objects={
             "character1": character1,
             "character2": character2,
             "story synopsis": story.getProperty("story synopsis"),
             "subplot": story.getProperty("subplot"),
-            "scene 1": story.getProperty("scene 2"),
-            "scene 2": story.getProperty("scene 3"),
+            "scene 1 previous": story.getProperty("scene 1"),
+            "scene 2 previous": story.getProperty("scene 2"),
+            "scene 3 previous": story.getProperty("scene 3"),
         },
             genTextAmount=genTextAmount,
             no_repeat_ngram_size=self.no_repeat_ngram_size,
@@ -192,7 +222,11 @@ class AnimeBuilder:
             MIN_ABC=self.MIN_ABC,
             verbose=self.verbose
         )
-        return newStory
+
+        whichScene=advanceSceneObject['whichScene']
+        numScenes=advanceSceneObject['numScenes']
+
+        return whichScene,numScenes,newStory
 
     def sceneToTranscript(self, scene, k=3, character1=None, character2=None):
         if character1 is None:
@@ -217,7 +251,21 @@ class AnimeBuilder:
                                  )
         return thisObject
 
-    def watchAnime(self, synopsis=None, subplot1=None, scene1=None, character1=None, num_characters=4, k=100, amt=25, promptSuffix="", portrait_size=128):
+    def watchAnime(
+        self, 
+        synopsis=None, 
+        subplot1=None, 
+        scene1=None, 
+        character1=None,
+        num_characters=4, 
+        k=100, 
+        amt=25, 
+        promptSuffix="", 
+        portrait_size=128,
+        skip_transcript=False
+        ):
+
+
         objects = {}
         if synopsis:
             objects['story synopsis'] = synopsis
@@ -231,6 +279,7 @@ class AnimeBuilder:
 
         if subplot1:
             objects['part 1'] = subplot1
+
 
         plotOverview = WorldObject(
             self.templates, self.textGenerator, "plot overview", genTextAmount=amt, objects=objects,
@@ -309,81 +358,67 @@ class AnimeBuilder:
 
         synopsis = story.getProperty("story synopsis")
 
-        scenes = [story.getProperty("scene 1"),
-                  story.getProperty("scene 2"),
-                  story.getProperty("scene 3")]
-        for i, scene in enumerate(scenes):
+        whichScene=1
+        numScenes=3
+        for i in range(k):
 
-            yield {"debug": "Subplot: %s\n Scene: %s" % (subplot, scene)}
-
-            audio = self.generate_track_by_prompt_vol(scene, vol=0.25)
-
-            character2 = story.getProperty("character%d" % (i+2))
-            character2description = character2.getProperty("description")
-
-            prompt = scene+", "+characterDescription + \
-                ", "+character2description+","+promptSuffix
-            image = self.doGen(
-                prompt, num_inference_steps=self.num_inference_steps)
-            yield {"music": audio}
-            yield {"image": image}
-            transcript = self.sceneToTranscript(
-                story, k=i+1, character2=character2)
-
-            # generate dialogue
-            tt = transcript.getProperty("transcript")
-            for line in tt.split("\n"):
-                thisImg = image.copy()
-                name, dialogue = line.split(":")
-                voice = voices[name]
-                portrait = portraits[name]
-                p2 = portrait.resize((portrait_size, portrait_size))
-                thisImg.paste(p2, (512-portrait_size, 512-portrait_size))
-                speech, duration = self.textToSpeech(dialogue, voice)
-                yield {"image": thisImg}
-                yield {"speech": speech,
-                       "duration": duration+1,
-                       "name": name,
-                       "dialogue": dialogue}
-
-        for i in range(3, k):
-
-            # update subplot
+            scene=str(story.getProperty("scene %d"%whichScene))
             whichSubplot = (i*5//k)+1
             wss = "part %d" % whichSubplot
             thisSubplot = plotOverview.getProperty(wss)
             story.objects['subplot'] = thisSubplot
 
-            character2 = random.choice(supportingCharacters)
-            character2description = character2.getProperty("description")
-
-            story = self.advanceStory(story, genTextAmount=amt,
-                                      character1=character, character2=character2)
-            scene = story.getProperty("scene 3")
-
-            yield {"debug": "Subplot: %s\n Scene: %s" % (thisSubplot, scene)}
-
             audio = self.generate_track_by_prompt_vol(scene, vol=0.25)
 
-            prompt = scene+", "+characterDescription + \
-                ", "+character2description+","+promptSuffix
+            character2=None
+            for this_character2 in supportingCharacters:
+                if str(this_character2.getProperty("name")) in scene:
+                    character2 = this_character2
+                    character2description = character2.getProperty("description")
+                    break
+
+            prompt = scene +", "+characterDescription 
+            if character2 is not None:
+                prompt+=", "+character2description+","+promptSuffix
             image = self.doGen(
                 prompt, num_inference_steps=self.num_inference_steps)
+            
+            yield {"debug": "Subplot: %s\n Scene: %s" % (thisSubplot, scene)}            
             yield {"music": audio}
             yield {"image": image}
-            transcript = self.sceneToTranscript(story, k=3)
+            transcript = self.sceneToTranscript(
+                story, k=whichScene, character2=character2)
 
             # generate dialogue
-            tt = transcript.getProperty("transcript")
-            for line in tt.split("\n"):
-                thisImg = image.copy()
-                name, dialogue = line.split(":")
-                voice = voices[name]
-                portrait = portraits[name]
-                p2 = portrait.resize((portrait_size, portrait_size))
-                thisImg.paste(p2, (512-portrait_size, 512-portrait_size))
-                speech, duration = self.textToSpeech(dialogue, voice)
-                yield {"image": thisImg}
-                yield {"speech": speech, "duration": duration+1,
-                       "name": name,
-                       "dialogue": dialogue}
+            if skip_transcript==False:
+                tt = transcript.getProperty("transcript")
+                for line in tt.split("\n"):
+                    thisImg = image.copy()
+                    name, dialogue = line.split(":")
+                    voice = voices[name]
+                    portrait = portraits[name]
+                    p2 = portrait.resize((portrait_size, portrait_size))
+                    thisImg.paste(p2, (512-portrait_size, 512-portrait_size))
+                    speech, duration = self.textToSpeech(dialogue, voice)
+                    yield {"image": thisImg}
+                    yield {"speech": speech,
+                        "duration": duration+1,
+                        "name": name,
+                        "dialogue": dialogue}
+
+
+            #advance plot if necessary
+            whichScene+=1
+            if whichScene>numScenes:
+                whichScene, numScenes, story = self.advanceStory(
+                    story, 
+                    thisSubplot,
+                    genTextAmount=amt,
+                    mainCharacter=character, 
+                    supportingCharacters=supportingCharacters
+                )
+                print("advancing scene",story,whichScene,numScenes)
+            else:
+                #print("not advancing",whichScene,numScenes)
+                pass
+            
