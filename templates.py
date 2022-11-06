@@ -289,16 +289,17 @@ Otis: Yeah, probably!
 
 
     
+
+character1:
+{character1}
+character2:
+{character2}
 plot summary:
 {character1.name} stars in this anime about {story synopsis:TEXT:}
 subplot:
 {subplot:TEXT:}
 scene:
 {scene:TEXT:}
-character1:
-{character1}
-character2:
-{character2}
 setting:
 {setting:TEXT:}
 transcript:

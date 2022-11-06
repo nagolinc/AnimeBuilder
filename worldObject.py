@@ -8,7 +8,8 @@ class WorldObject:
             textGenerator,
             objectName,
             objects=None,
-            genTextAmount=20,
+            genTextAmount_min=15,
+            genTextAmount_max=30,
             no_repeat_ngram_size=8,
             repetition_penalty=2.0,
             MIN_ABC=4,
@@ -26,7 +27,9 @@ class WorldObject:
         self.repetition_penalty = repetition_penalty
         self.num_beams = num_beams
 
-        self.genTextAmount = genTextAmount
+        self.genTextAmount_min = genTextAmount_min
+        self.genTextAmount_max = genTextAmount_max
+        self.MAX_DEPTH = 5
 
         self.objectName = objectName
         self.templates = templates
@@ -44,28 +47,32 @@ class WorldObject:
 
         self.object = self.parseTemplate(self.filledTemplate)
 
-    def generateTextWithInput(self, textInput):
+    def generateTextWithInput(self, textInput, depth=0):
+
+        if depth > self.MAX_DEPTH:
+            return "error"
 
         input_ids = self.textGenerator['tokenizer'](
             textInput, return_tensors="pt").input_ids
-        amt = input_ids.shape[1]        
+        amt = input_ids.shape[1]
         result = self.textGenerator['pipeline'](
             textInput,
             do_sample=True,
-            min_length=amt+self.genTextAmount,#gah, this is in units of tokens, not chars
-            max_length=amt+self.genTextAmount,
-            #max_new_tokens=self.genTextAmount,
-            #max_length=None,
+            # gah, this is in units of tokens, not chars
+            min_length=amt+self.genTextAmount_min,
+            max_length=amt+self.genTextAmount_max,
+            # max_new_tokens=self.genTextAmount,
+            # max_length=None,
             pad_token_id=50256,
             return_full_text=False,
             no_repeat_ngram_size=self.no_repeat_ngram_size,
-            repetition_penalty=self.repetition_penalty,            
+            repetition_penalty=self.repetition_penalty,
             num_beams=self.num_beams,
             temperature=self.temperature
         )
 
         lines = result[0]['generated_text'].strip().split("\n")
-        
+
         '''
 
         print('about to die',textInput)
@@ -97,7 +104,7 @@ class WorldObject:
         if len(lines) == 0:
             if self.verbose:
                 print('no response', result, textInput)
-            return self.generateTextWithInput(textInput)
+            return self.generateTextWithInput(textInput, depth=depth+1)
         rv = lines[0]
         # remove non-ascii
         rv = rv.encode("ascii", errors="ignore").decode()
@@ -110,18 +117,18 @@ class WorldObject:
         if rv[-1] == ":":
             if self.verbose:
                 print('trailing :', result)
-            return self.generateTextWithInput(textInput)
+            return self.generateTextWithInput(textInput, depth=depth+1)
         # ":"s should actually just never appear
         if ":" in rv:
             if self.verbose:
                 print(': present', result)
-            return self.generateTextWithInput(textInput)
+            return self.generateTextWithInput(textInput, depth=depth+1)
         # anything that's all punctuation is also bad
         #rva = re.sub(r'\W+', '', rv)
         rva = re.sub(r'[^a-zA-Z]+', '', rv)
         if len(rva) < self.MIN_ABC:
             if self.verbose:
-                print('non alphanumeric', result, self.MIN_ABC)
+                print('non alphanumeric', result, self.MIN_ABC, depth=depth+1)
             return self.generateTextWithInput(textInput)
 
         return rv
@@ -238,8 +245,8 @@ class WorldObject:
                 objType = re.sub(r'\d+$', '', objectName)
             # generate object
             thisObject = WorldObject(self.templates, self.textGenerator, objType, objects=objects,
-
-                                     genTextAmount=self.genTextAmount,
+                                     genTextAmount_min=self.genTextAmount_min,
+                                     genTextAmount_max=self.genTextAmount_max,
                                      no_repeat_ngram_size=self.no_repeat_ngram_size,
                                      repetition_penalty=self.repetition_penalty,
                                      MIN_ABC=self.MIN_ABC,

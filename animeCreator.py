@@ -58,43 +58,43 @@ class AnimeBuilder:
         self.temperature = temperature
         self.MIN_ABC = MIN_ABC
 
-        #use this for advanceScene()
-        #advance scene
+
+        # use this for advanceScene()
+        # advance scene
         if advanceSceneObjects is None:
-            self.advanceSceneObjects=[
+            self.advanceSceneObjects = [
                 {
-                    "object":"advancePlot",
-                    "whichScene":3,
-                    "numScenes":3,
+                    "object": "advancePlot",
+                    "whichScene": 3,
+                    "numScenes": 3,
                 },
                 {
-                    "object":"fightScene",
-                    "whichScene":1,
-                    "numScenes":3,
+                    "object": "fightScene",
+                    "whichScene": 1,
+                    "numScenes": 3,
                 },
             ]
         else:
-            self.advanceSceneObjects=advanceSceneObjects
+            self.advanceSceneObjects = advanceSceneObjects
 
         print("LOADING TEXT MODEL")
 
         # text model
         self.textModel = textModel
 
-
         textGenerator = pipeline('text-generation',
-                                      torch_dtype=torch.float16,
-                                      model=self.textModel, device=0)
+                                 torch_dtype=torch.float16,
+                                 model=self.textModel, device=0)
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.textModel, torch_dtype=torch.float16)
-        #self.textModel = AutoModelForCausalLM.from_pretrained(
+        # self.textModel = AutoModelForCausalLM.from_pretrained(
         #    self.textModel, torch_dtype=torch.float16).to('cuda')
 
         self.textGenerator = {
             'tokenizer': self.tokenizer,
-            #'model': self.textModel
-            'pipeline':textGenerator
+            # 'model': self.textModel
+            'pipeline': textGenerator
         }
 
         # image model
@@ -169,6 +169,8 @@ class AnimeBuilder:
 
     def generate_track_by_prompt_vol(self, prompt, vol=1.0, duration=30, loop=True, autoplay=True):
         url = generate_track_by_prompt(prompt, duration, loop)
+        if url is None:
+            return
         mp3 = urllib.request.urlopen(url).read()
         original = AudioSegment.from_mp3(BytesIO(mp3))
         samples = original.get_array_of_samples()
@@ -181,6 +183,8 @@ class AnimeBuilder:
     def descriptionToCharacter(self, description):
         thisObject = WorldObject(self.templates, self.textGenerator, "descriptionToCharacter", objects={
             "description": description},
+            genTextAmount_min=self.amtMin,
+            genTextAmount_max=self.amtMax,
             no_repeat_ngram_size=self.no_repeat_ngram_size,
             repetition_penalty=self.repetition_penalty,
             num_beams=self.num_beams,
@@ -190,16 +194,14 @@ class AnimeBuilder:
         )
         return thisObject
 
-    def advanceStory(self, story, subplot, mainCharacter=None, supportingCharacters=None, genTextAmount=20):
+    def advanceStory(self, story, subplot, mainCharacter=None, supportingCharacters=None):
 
-
-        advanceSceneObject=random.choice(self.advanceSceneObjects)
+        advanceSceneObject = random.choice(self.advanceSceneObjects)
 
         # update subplot
-        
-        character1=mainCharacter
-        character2=character2 = random.choice(supportingCharacters)
 
+        character1 = mainCharacter
+        character2 = character2 = random.choice(supportingCharacters)
 
         if character1 is None:
             character1 = story.getProperty("character1")
@@ -214,7 +216,8 @@ class AnimeBuilder:
             "scene 2 previous": story.getProperty("scene 2"),
             "scene 3 previous": story.getProperty("scene 3"),
         },
-            genTextAmount=genTextAmount,
+            genTextAmount_min=self.amtMin,
+            genTextAmount_max=self.amtMax,
             no_repeat_ngram_size=self.no_repeat_ngram_size,
             repetition_penalty=self.repetition_penalty,
             num_beams=self.num_beams,
@@ -223,10 +226,10 @@ class AnimeBuilder:
             verbose=self.verbose
         )
 
-        whichScene=advanceSceneObject['whichScene']
-        numScenes=advanceSceneObject['numScenes']
+        whichScene = advanceSceneObject['whichScene']
+        numScenes = advanceSceneObject['numScenes']
 
-        return whichScene,numScenes,newStory
+        return whichScene, numScenes, newStory
 
     def sceneToTranscript(self, scene, k=3, character1=None, character2=None):
         if character1 is None:
@@ -242,6 +245,8 @@ class AnimeBuilder:
                    }
         thisObject = WorldObject(self.templates, self.textGenerator,
                                  "sceneToTranscript", objects,
+                                 genTextAmount_min=self.amtMin,
+                                 genTextAmount_max=self.amtMax,
                                  no_repeat_ngram_size=self.no_repeat_ngram_size,
                                  repetition_penalty=self.repetition_penalty,
                                  num_beams=self.num_beams,
@@ -252,19 +257,23 @@ class AnimeBuilder:
         return thisObject
 
     def watchAnime(
-        self, 
-        synopsis=None, 
-        subplot1=None, 
-        scene1=None, 
+        self,
+        synopsis=None,
+        subplot1=None,
+        scene1=None,
         character1=None,
-        num_characters=4, 
-        k=100, 
-        amt=25, 
-        promptSuffix="", 
+        num_characters=4,
+        k=100,
+        amtMin=15,
+        amtMax=30,
+        promptSuffix="",
         portrait_size=128,
-        skip_transcript=False
-        ):
+        skip_transcript=False,
+        whichScene=1  # optionally skip first few scenes
+    ):
 
+        self.amtMin=amtMin
+        self.amtMax=amtMax
 
         objects = {}
         if synopsis:
@@ -280,9 +289,11 @@ class AnimeBuilder:
         if subplot1:
             objects['part 1'] = subplot1
 
-
         plotOverview = WorldObject(
-            self.templates, self.textGenerator, "plot overview", genTextAmount=amt, objects=objects,
+            self.templates, self.textGenerator, "plot overview",
+            genTextAmount_min=self.amtMin,
+            genTextAmount_max=self.amtMax,
+            objects=objects,
             no_repeat_ngram_size=self.no_repeat_ngram_size,
             repetition_penalty=self.repetition_penalty,
             num_beams=self.num_beams,
@@ -294,7 +305,10 @@ class AnimeBuilder:
         objects["subplot"] = subplot
 
         story = WorldObject(self.templates, self.textGenerator,
-                            "storyWithCharacters", genTextAmount=amt, objects=objects,
+                            "storyWithCharacters",
+                            genTextAmount_min=self.amtMin,
+                            genTextAmount_max=self.amtMax,
+                            objects=objects,
                             no_repeat_ngram_size=self.no_repeat_ngram_size,
                             repetition_penalty=self.repetition_penalty,
                             num_beams=self.num_beams,
@@ -317,6 +331,8 @@ class AnimeBuilder:
         if num_characters > 4:
             for i in range(4, num_characters):
                 newCharacter = WorldObject(self.templates, self.textGenerator, "character",
+                                           genTextAmount_min=self.amtMin,
+                                           genTextAmount_max=self.amtMax,
                                            no_repeat_ngram_size=self.no_repeat_ngram_size,
                                            repetition_penalty=self.repetition_penalty,
                                            num_beams=self.num_beams,
@@ -358,11 +374,11 @@ class AnimeBuilder:
 
         synopsis = story.getProperty("story synopsis")
 
-        whichScene=1
-        numScenes=3
+        whichScene = whichScene
+        numScenes = 3
         for i in range(k):
 
-            scene=str(story.getProperty("scene %d"%whichScene))
+            scene = str(story.getProperty("scene %d" % whichScene))
             whichSubplot = (i*5//k)+1
             wss = "part %d" % whichSubplot
             thisSubplot = plotOverview.getProperty(wss)
@@ -370,27 +386,33 @@ class AnimeBuilder:
 
             audio = self.generate_track_by_prompt_vol(scene, vol=0.25)
 
-            character2=None
+            character2 = None
             for this_character2 in supportingCharacters:
                 if str(this_character2.getProperty("name")) in scene:
                     character2 = this_character2
-                    character2description = character2.getProperty("description")
+                    character2description = character2.getProperty(
+                        "description")
                     break
 
-            prompt = scene +", "+characterDescription 
+            prompt = scene + ", "+characterDescription
             if character2 is not None:
-                prompt+=", "+character2description+","+promptSuffix
+                prompt += ", "+character2description+","+promptSuffix
             image = self.doGen(
                 prompt, num_inference_steps=self.num_inference_steps)
-            
-            yield {"debug": "Subplot: %s\n Scene: %s" % (thisSubplot, scene)}            
-            yield {"music": audio}
+
+            yield {"debug": "Subplot: %s\n Scene: %s" % (thisSubplot, scene)}
+            if audio:
+                yield {"music": audio}
+            else:
+                print("err, no music!")
             yield {"image": image}
             transcript = self.sceneToTranscript(
                 story, k=whichScene, character2=character2)
 
+            print(transcript)
+
             # generate dialogue
-            if skip_transcript==False:
+            if skip_transcript == False:
                 tt = transcript.getProperty("transcript")
                 for line in tt.split("\n"):
                     thisImg = image.copy()
@@ -402,23 +424,20 @@ class AnimeBuilder:
                     speech, duration = self.textToSpeech(dialogue, voice)
                     yield {"image": thisImg}
                     yield {"speech": speech,
-                        "duration": duration+1,
-                        "name": name,
-                        "dialogue": dialogue}
+                           "duration": duration+1,
+                           "name": name,
+                           "dialogue": dialogue}
 
-
-            #advance plot if necessary
-            whichScene+=1
-            if whichScene>numScenes:
+            # advance plot if necessary
+            whichScene += 1
+            if whichScene > numScenes:
                 whichScene, numScenes, story = self.advanceStory(
-                    story, 
+                    story,
                     thisSubplot,
-                    genTextAmount=amt,
-                    mainCharacter=character, 
+                    mainCharacter=character,
                     supportingCharacters=supportingCharacters
                 )
-                print("advancing scene",story,whichScene,numScenes)
+                print("advancing scene", story, whichScene, numScenes)
             else:
                 #print("not advancing",whichScene,numScenes)
                 pass
-            
