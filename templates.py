@@ -267,48 +267,29 @@ hair color:
     "sceneToTranscript":"""
 
 
-plot summary:
-Dave stars in this anime about becoming the worlds greatest basketball player
-subplot
-Dave wins his first championship
+
 scene:
-Dave and Otis hang out before the big game
-character1:
-Dave is a tall blonde teen who loves to play basketball
-character2:
-Otis is a nerdy kid with curly red hair who hates exercise
-setting:
-The neighborhood arcade
+Amy and Jenna hang out after school
 transcript:
-Dave: I'm so nervous about my big game today
-Otis: Don't worry, you're going to do great!
-Dave: I sure hope so
-Otis: You can bet on it
-Dave: Do you think Michael Jordan was nervous before his first professional basketball game?
-Otis: Yeah, probably!
+Amy: School was so tough today!
+Jenna: Don't worry, you'll get used to it!
+Amy: I don't want to get used to it.  I want to go back to summer break
+Jenna: Fair enough, but we have to go to school
+Amy: Why? Isn't school just a prison for kids?
+Jenna: Yeah, probably!
 
 
-    
-
-character1:
-{character1}
-character2:
-{character2}
-plot summary:
-{character1.name} stars in this anime about {story synopsis:TEXT:}
-subplot:
-{subplot:TEXT:}
 scene:
 {scene:TEXT:}
 setting:
 {setting:TEXT:}
 transcript:
-{character1.name}: {TEXT}
-{character2.name}: {TEXT}
-{character1.name}: {TEXT}
-{character2.name}: {TEXT}
-{character1.name}: {TEXT}
-{character2.name}: {TEXT}
+{character1.name}: {line 1 text:TEXT:}
+{character2.name}: {line 2 text:TEXT:}
+{character1.name}: {line 3 text:TEXT:}
+{character2.name}: {line 4 text:TEXT:}
+{character1.name}: {line 5 text:TEXT:}
+{character2.name}: {line 6 text:TEXT:}
     
     """,
     "sceneToCharacters":"""

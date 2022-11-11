@@ -3,6 +3,7 @@ from transformers import pipeline
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
+import gc
 import torch
 import random
 from PIL import Image
@@ -14,7 +15,10 @@ from IPython.display import Audio, display
 import ipywidgets as widgets
 from torch import autocast
 import time
-from diffusers import StableDiffusionPipeline
+from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler, StableDiffusionImg2ImgPipeline
+from diffusers.models import AutoencoderKL
+
+
 from fairseq.checkpoint_utils import load_model_ensemble_and_task_from_hf_hub
 from fairseq.models.text_to_speech.hub_interface import TTSHubInterface
 import IPython.display as ipd
@@ -23,18 +27,13 @@ from mubert import generate_track_by_prompt
 from templates import templates
 from worldObject import WorldObject
 
-
-# diffusionModel="hakurei/waifu-diffusion"
-# diffusionModel="nitrosocke/mo-di-diffusion"
-#diffusionModel = "E:\img\StableCraft\wdf"
-# diffusionModel="DGSpitzer/Cyberpunk-Anime-Diffusion"
-
 class AnimeBuilder:
 
     def __init__(
         self,
         textModel='EleutherAI/gpt-neo-1.3B',
         diffusionModel="hakurei/waifu-diffusion",
+        vaeModel="stabilityai/sd-vae-ft-mse",
         templates=templates,
         advanceSceneObjects=None,
         no_repeat_ngram_size=8,
@@ -43,9 +42,11 @@ class AnimeBuilder:
         MIN_ABC=2,
         num_beams=8,
         temperature=1.0,
-        verbose=False
+        verbose=False,
+        doImg2Img=False
     ):
 
+        
         self.verbose = verbose
 
         self.templates = templates
@@ -57,7 +58,6 @@ class AnimeBuilder:
         self.num_beams = num_beams
         self.temperature = temperature
         self.MIN_ABC = MIN_ABC
-
 
         # use this for advanceScene()
         # advance scene
@@ -101,10 +101,16 @@ class AnimeBuilder:
 
         print("LOADING IMAGE MODEL")
 
+        # scheduler
+        scheduler = DPMSolverMultistepScheduler.from_config(
+            diffusionModel, subfolder='scheduler')
+
         # make sure you're logged in with `huggingface-cli login`
+        vae = AutoencoderKL.from_pretrained(vaeModel)
         self.pipe = StableDiffusionPipeline.from_pretrained(
             diffusionModel,
-            # vae=vae,
+            scheduler=scheduler,
+            vae=vae,
             # revision="fp16",
             torch_dtype=torch.float16,
             use_auth_token=True,
@@ -114,6 +120,28 @@ class AnimeBuilder:
 
         self.pipe = self.pipe.to("cuda")
         self.pipe.enable_attention_slicing()
+        self.pipe.enable_xformers_memory_efficient_attention()
+
+        self.doImg2Img=doImg2Img
+        
+        if self.doImg2Img:
+            print("LOADING Img2Img")
+            self.img2img = StableDiffusionImg2ImgPipeline.from_pretrained(
+                diffusionModel,
+                #revision=revision, 
+                scheduler=scheduler,
+                unet=self.pipe.unet,
+                vae=self.pipe.vae,
+                safety_checker=self.pipe.safety_checker,
+                text_encoder=self.pipe.text_encoder,
+                tokenizer=self.pipe.tokenizer,
+                torch_dtype=torch.float16, 
+                use_auth_token=True,
+                cache_dir="./AI/StableDiffusion"
+            ) 
+
+            self.img2img.enable_attention_slicing()
+            self.img2img.enable_xformers_memory_efficient_attention()
 
         print("LOADING TTS MODEL")
 
@@ -143,14 +171,49 @@ class AnimeBuilder:
         self.maleVoices = [i for i in range(len(s)) if s[i] == "M"]
         self.femaleVoices = [i for i in range(len(s)) if s[i] == "F"]
 
-    def doGen(self, prompt, num_inference_steps=30):
-        image = self.pipe([prompt],
+    def doGen(self, prompt, num_inference_steps=30,recursion=0):
+
+        #move text model to cpu for now
+        self.textGenerator['pipeline'].model=self.textGenerator['pipeline'].model.cpu()
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        with autocast("cuda"):
+            image = self.pipe([prompt],
                           negative_prompt=[
-                              "text, watermark, lowres, bad anatomy, bad hands, text, error, missing fingers, cropped, worst quality, low quality, normal quality, jpeg artifacts, watermark, blurry, grayscale, deformed weapons, deformed face, deformed human body"],
+                              "collage, grayscale, text, watermark, lowres, bad anatomy, bad hands, text, error, missing fingers, cropped, worst quality, low quality, normal quality, jpeg artifacts, watermark, blurry, grayscale, deformed weapons, deformed face, deformed human body"],
                           guidance_scale=7.5,
                           num_inference_steps=num_inference_steps,
                           height=512).images[0]
-        return image
+        
+        if self.doImg2Img:
+            img2Input=image.resize((1024,1024))
+            with autocast("cuda"):
+                img2 = self.img2img(
+                    prompt=prompt, 
+                    init_image=img2Input, 
+                    strength=0.25, 
+                    guidance_scale=7.5, 
+                    width=1024,height=1024,
+                    num_inference_steps=num_inference_steps,
+                ).images[0]
+                output= img2
+        else:
+            output = image
+
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        self.textGenerator['pipeline'].model=self.textGenerator['pipeline'].model.cuda()
+
+        #fix all black images? (which Anything 3.0 puts out sometimes)
+        pix = np.array(output)
+        MAX_IMG_RECURSION=3
+        if np.sum(pix)==0 and recursion<MAX_IMG_RECURSION:
+            print("REDOING BLANK IMAGE!")
+            return self.doGen(prompt, num_inference_steps,recursion=recursion+1)
+
+        return output
 
     def textToSpeech(self, text, voice):
         try:
@@ -194,14 +257,18 @@ class AnimeBuilder:
         )
         return thisObject
 
-    def advanceStory(self, story, subplot, mainCharacter=None, supportingCharacters=None):
+    def advanceStory(self, story, subplot, mainCharacter=None, supportingCharacters=None, alwaysUseMainCharacter=True):
 
         advanceSceneObject = random.choice(self.advanceSceneObjects)
 
         # update subplot
 
-        character1 = mainCharacter
-        character2 = character2 = random.choice(supportingCharacters)
+        if alwaysUseMainCharacter:
+            character1 = mainCharacter
+            character2 = random.choice(supportingCharacters)
+        else:
+            character1, character2 = random.sample(
+                [mainCharacter]+supportingCharacters, 2)
 
         if character1 is None:
             character1 = story.getProperty("character1")
@@ -231,7 +298,7 @@ class AnimeBuilder:
 
         return whichScene, numScenes, newStory
 
-    def sceneToTranscript(self, scene, k=3, character1=None, character2=None):
+    def sceneToTranscript(self, scene, k=3, character1=None, character2=None, whichScene=1):
         if character1 is None:
             character1 = scene.getProperty("character1")
         if character2 is None:
@@ -243,6 +310,18 @@ class AnimeBuilder:
                    "character1": character1,
                    "character2": character2,
                    }
+
+        # check for dialogue
+        line1txt = None
+        try:
+            line1txt = scene.getProperty("scene %d line 1 text" % whichScene)
+            print("line 1 text", line1txt)
+        except:
+            print("no property", "scene %d line 1 text" % whichScene)
+            pass
+        if line1txt:
+            objects['line 1 text'] = line1txt
+
         thisObject = WorldObject(self.templates, self.textGenerator,
                                  "sceneToTranscript", objects,
                                  genTextAmount_min=self.amtMin,
@@ -269,11 +348,16 @@ class AnimeBuilder:
         promptSuffix="",
         portrait_size=128,
         skip_transcript=False,
-        whichScene=1  # optionally skip first few scenes
+        whichScene=1,  # optionally skip first few scenes
+        alwaysUseMainCharacter=True,  # always use main character in scene
     ):
 
-        self.amtMin=amtMin
-        self.amtMax=amtMax
+        #make sure text generator is on cuda (can get out of sync if we ctrl+c during doGen() )
+        self.textGenerator['pipeline'].model=self.textGenerator['pipeline'].model.cuda()
+
+
+        self.amtMin = amtMin
+        self.amtMax = amtMax
 
         objects = {}
         if synopsis:
@@ -284,10 +368,51 @@ class AnimeBuilder:
             if isinstance(character1, str):
                 character1 = self.descriptionToCharacter(character1)
                 # print(character1)
-            objects['character1'] = character1
+        else:
+            character1 = WorldObject(self.templates, self.textGenerator, "character",
+                                    genTextAmount_min=self.amtMin,
+                                    genTextAmount_max=self.amtMax,
+                                    no_repeat_ngram_size=self.no_repeat_ngram_size,
+                                    repetition_penalty=self.repetition_penalty,
+                                    num_beams=self.num_beams,
+                                    temperature=self.temperature,
+                                    MIN_ABC=self.MIN_ABC,
+                                    verbose=self.verbose
+                                    )
+            
+
+        mainCharacter = character1
+        objects['character1'] = mainCharacter
+        print("main character",mainCharacter.__repr__())
+
+        names = set()
+        names.add(str(mainCharacter.getProperty("name")))
+        # generate characters
+        supportingCharacters = []
+        while len(supportingCharacters) < num_characters-1:
+            newCharacter = WorldObject(self.templates, self.textGenerator, "character",
+                                       genTextAmount_min=self.amtMin,
+                                       genTextAmount_max=self.amtMax,
+                                       no_repeat_ngram_size=self.no_repeat_ngram_size,
+                                       repetition_penalty=self.repetition_penalty,
+                                       num_beams=self.num_beams,
+                                       temperature=self.temperature,
+                                       MIN_ABC=self.MIN_ABC,
+                                       verbose=self.verbose
+                                       )
+            thisName = str(newCharacter.getProperty("name"))
+            if thisName not in names:
+                print(newCharacter.__repr__())
+                supportingCharacters += [newCharacter]
+                names.add(thisName)
+            else:
+                print("skipping repeated character", thisName)
 
         if subplot1:
             objects['part 1'] = subplot1
+
+        for i in range(3):
+            objects['character%d' % (i+2)] = supportingCharacters[i]
 
         plotOverview = WorldObject(
             self.templates, self.textGenerator, "plot overview",
@@ -325,6 +450,7 @@ class AnimeBuilder:
         else:
             characterDescription = character.getProperty("description")
 
+        '''
         supportingCharacters = [story.getProperty(
             "character%d" % i) for i in range(2, 5)]
 
@@ -342,6 +468,7 @@ class AnimeBuilder:
                                            )
                 print(newCharacter.__repr__())
                 supportingCharacters += [newCharacter]
+        '''
 
         print(story)
 
@@ -386,17 +513,52 @@ class AnimeBuilder:
 
             audio = self.generate_track_by_prompt_vol(scene, vol=0.25)
 
+            # parse out character1 and character2
+            character1 = None
+            for this_character1 in [mainCharacter]+supportingCharacters:
+                if str(this_character1.getProperty("name")) in scene:
+                    character1 = this_character1
+                    character1description = character1.getProperty(
+                        "description")
+                    break
             character2 = None
-            for this_character2 in supportingCharacters:
+            for this_character2 in [mainCharacter]+supportingCharacters:
+                # gah, bug was that we were finding the same person twice!
+                if character1 is not None and str(this_character2.getProperty("name")) == str(character1.getProperty("name")):
+                    continue
                 if str(this_character2.getProperty("name")) in scene:
                     character2 = this_character2
                     character2description = character2.getProperty(
                         "description")
                     break
 
-            prompt = scene + ", "+characterDescription
+            # swap order if needed
+            if character1 is not None and character2 is not None:
+                name1 = str(character1.getProperty("name"))
+                name2 = str(character2.getProperty("name"))
+                i1 = scene.index(name1)
+                i2 = scene.index(name2)
+
+                print("indexes", i1, i2)
+
+                if i1 > i2:
+                    # swap
+                    character1, character2 = character2, character1
+                    character1description, character2description = character2description, character1description
+            else:
+                print("huh?", character1, character2)
+
+            prompt = scene + ", "
+            if character1 is not None:
+                prompt += character1description
+            else:
+                print("Error, could not find character1", scene)
+
             if character2 is not None:
                 prompt += ", "+character2description+","+promptSuffix
+            else:
+                print("Error, could not find character2", scene)
+
             image = self.doGen(
                 prompt, num_inference_steps=self.num_inference_steps)
 
@@ -407,7 +569,11 @@ class AnimeBuilder:
                 print("err, no music!")
             yield {"image": image}
             transcript = self.sceneToTranscript(
-                story, k=whichScene, character2=character2)
+                story, k=whichScene,
+                character1=character1,
+                character2=character2,
+                whichScene=whichScene,
+            )
 
             print(transcript)
 
@@ -420,7 +586,7 @@ class AnimeBuilder:
                     voice = voices[name]
                     portrait = portraits[name]
                     p2 = portrait.resize((portrait_size, portrait_size))
-                    thisImg.paste(p2, (512-portrait_size, 512-portrait_size))
+                    thisImg.paste(p2, (thisImg.size[0]-portrait_size, thisImg.size[1]-portrait_size))
                     speech, duration = self.textToSpeech(dialogue, voice)
                     yield {"image": thisImg}
                     yield {"speech": speech,
@@ -435,7 +601,8 @@ class AnimeBuilder:
                     story,
                     thisSubplot,
                     mainCharacter=character,
-                    supportingCharacters=supportingCharacters
+                    supportingCharacters=supportingCharacters,
+                    alwaysUseMainCharacter=alwaysUseMainCharacter
                 )
                 print("advancing scene", story, whichScene, numScenes)
             else:

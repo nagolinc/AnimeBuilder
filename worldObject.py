@@ -1,4 +1,4 @@
-import re
+import re, random
 
 
 class WorldObject:
@@ -128,8 +128,8 @@ class WorldObject:
         rva = re.sub(r'[^a-zA-Z]+', '', rv)
         if len(rva) < self.MIN_ABC:
             if self.verbose:
-                print('non alphanumeric', result, self.MIN_ABC, depth=depth+1)
-            return self.generateTextWithInput(textInput)
+                print('non alphanumeric', result, self.MIN_ABC)
+            return self.generateTextWithInput(textInput, depth=depth+1)
 
         return rv
 
@@ -163,10 +163,37 @@ class WorldObject:
         template = "\n".join([line.strip() for line in template.split("\n")])
 
         objects = template.split("\n\n")
+        
+        #trim blank lines from objects
+        objects=["\n".join([line for line in o.split("\n") if len(line)>0]) for o in objects]
+
         if self.verbose:
             print(objects)
-        objects = [o for o in objects if len(o) > 0]
-        thisObject = objects[-1]
+
+
+        def countABC(s):
+            sa = re.sub(r'[^a-zA-Z]+', '', s)
+            return len(sa)
+
+        startIndex=None
+
+        for i,o in enumerate(objects):
+            if o=="#":
+                startIndex=i+1
+                break
+
+        if self.verbose:
+            print("start index",startIndex)
+
+        objects=objects[startIndex:]
+
+        objects = [o for o in objects if countABC(o) > 0]
+        
+        if startIndex is None:
+            thisObject = objects[-1]#by default choose last object
+        else:
+            thisObject = random.choice(objects)
+
         output = {}
         propName = "NONE"
         for i, line in enumerate(thisObject.split("\n")):
@@ -264,6 +291,7 @@ class WorldObject:
             return self.objects[propName]
         if propName in self.object:
             return self.object[propName]
+        print("error in",self.__repr__(),propName)
         raise ValueError("property not found!")
 
     def __repr__(self):
