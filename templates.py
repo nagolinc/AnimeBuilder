@@ -196,9 +196,9 @@ plot summary:
 subplot:
 {subplot:TEXT:}
 scene 1:
-{scene 2 previous:TEXT:}
+{previous.scene 2:TEXT:}
 scene 2:
-{scene 3 previous:TEXT:}
+{previous.scene 3:TEXT:}
 scene 3:
 {character1.name} and {character2.name} {scene 3 text:TEXT:}
 

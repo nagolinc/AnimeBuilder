@@ -1,4 +1,5 @@
-import re, random
+import re
+import random
 
 
 class WorldObject:
@@ -8,28 +9,25 @@ class WorldObject:
             textGenerator,
             objectName,
             objects=None,
-            genTextAmount_min=15,
-            genTextAmount_max=30,
-            no_repeat_ngram_size=8,
-            repetition_penalty=2.0,
-            MIN_ABC=4,
-            num_beams=8,
-            temperature=1.0,
+            cfg=None,
             verbose=False):
+
+        if cfg is None:
+            cfg = {
+                "genTextAmount_min": 15,
+                "genTextAmount_max": 30,
+                "no_repeat_ngram_size": 8,
+                "repetition_penalty": 2.0,
+                "MIN_ABC": 4,
+                "num_beams": 8,
+                "temperature": 1.0,
+                "MAX_DEPTH": 5
+            }
+        self.cfg = cfg
 
         self.textGenerator = textGenerator
 
         self.verbose = verbose
-
-        self.temperature = temperature
-        self.MIN_ABC = MIN_ABC
-        self.no_repeat_ngram_size = no_repeat_ngram_size
-        self.repetition_penalty = repetition_penalty
-        self.num_beams = num_beams
-
-        self.genTextAmount_min = genTextAmount_min
-        self.genTextAmount_max = genTextAmount_max
-        self.MAX_DEPTH = 5
 
         self.objectName = objectName
         self.templates = templates
@@ -49,7 +47,7 @@ class WorldObject:
 
     def generateTextWithInput(self, textInput, depth=0):
 
-        if depth > self.MAX_DEPTH:
+        if depth > self.cfg["MAX_DEPTH"]:
             return "error"
 
         input_ids = self.textGenerator['tokenizer'](
@@ -58,45 +56,18 @@ class WorldObject:
         result = self.textGenerator['pipeline'](
             textInput,
             do_sample=True,
-            # gah, this is in units of tokens, not chars
-            min_length=amt+self.genTextAmount_min,
-            max_length=amt+self.genTextAmount_max,
-            # max_new_tokens=self.genTextAmount,
-            # max_length=None,
+            min_length=amt+self.cfg["genTextAmount_min"],
+            max_length=amt+self.cfg["genTextAmount_max"],
             pad_token_id=50256,
             return_full_text=False,
-            no_repeat_ngram_size=self.no_repeat_ngram_size,
-            repetition_penalty=self.repetition_penalty,
-            num_beams=self.num_beams,
-            temperature=self.temperature
+            no_repeat_ngram_size=self.cfg["no_repeat_ngram_size"],
+            repetition_penalty=self.cfg["repetition_penalty"],
+            num_beams=self.cfg["num_beams"],
+            temperature=self.cfg["temperature"]
         )
 
         lines = result[0]['generated_text'].strip().split("\n")
 
-        '''
-
-        print('about to die',textInput)
-
-        input_ids = self.textGenerator['tokenizer'](
-            textInput, return_tensors="pt").input_ids.to("cuda")
-
-        amt = len(input_ids)
-
-        outputs = self.textGenerator['model'].generate(input_ids, do_sample=True,
-                                                       min_length=amt+self.genTextAmount,  # gah, this is in units of tokens, not chars
-                                                       max_length=amt+self.genTextAmount,
-                                                       pad_token_id=50256,
-                                                       no_repeat_ngram_size=self.no_repeat_ngram_size,
-                                                       repetition_penalty=self.repetition_penalty,
-                                                       num_beams=self.num_beams,
-                                                       temperature=self.temperature
-                                                       )
-
-        result = self.textGenerator['tokenizer'].batch_decode(
-            outputs, skip_special_tokens=True)
-
-        lines=result[0]['generated_text'].strip().split("\n")
-        '''
 
         # remove len()==0 lines
         lines = [line.strip() for line in lines if len(line.strip()) > 0]
@@ -126,9 +97,9 @@ class WorldObject:
         # anything that's all punctuation is also bad
         #rva = re.sub(r'\W+', '', rv)
         rva = re.sub(r'[^a-zA-Z]+', '', rv)
-        if len(rva) < self.MIN_ABC:
+        if len(rva) < self.cfg["MIN_ABC"]:
             if self.verbose:
-                print('non alphanumeric', result, self.MIN_ABC)
+                print('non alphanumeric', result, self.cfg["MIN_ABC"])
             return self.generateTextWithInput(textInput, depth=depth+1)
 
         return rv
@@ -163,34 +134,34 @@ class WorldObject:
         template = "\n".join([line.strip() for line in template.split("\n")])
 
         objects = template.split("\n\n")
-        
-        #trim blank lines from objects
-        objects=["\n".join([line for line in o.split("\n") if len(line)>0]) for o in objects]
+
+        # trim blank lines from objects
+        objects = ["\n".join([line for line in o.split(
+            "\n") if len(line) > 0]) for o in objects]
 
         if self.verbose:
             print(objects)
-
 
         def countABC(s):
             sa = re.sub(r'[^a-zA-Z]+', '', s)
             return len(sa)
 
-        startIndex=None
+        startIndex = None
 
-        for i,o in enumerate(objects):
-            if o=="#":
-                startIndex=i+1
+        for i, o in enumerate(objects):
+            if o == "#":
+                startIndex = i+1
                 break
 
         if self.verbose:
-            print("start index",startIndex)
+            print("start index", startIndex)
 
-        objects=objects[startIndex:]
+        objects = objects[startIndex:]
 
         objects = [o for o in objects if countABC(o) > 0]
-        
+
         if startIndex is None:
-            thisObject = objects[-1]#by default choose last object
+            thisObject = objects[-1]  # by default choose last object
         else:
             thisObject = random.choice(objects)
 
@@ -272,13 +243,7 @@ class WorldObject:
                 objType = re.sub(r'\d+$', '', objectName)
             # generate object
             thisObject = WorldObject(self.templates, self.textGenerator, objType, objects=objects,
-                                     genTextAmount_min=self.genTextAmount_min,
-                                     genTextAmount_max=self.genTextAmount_max,
-                                     no_repeat_ngram_size=self.no_repeat_ngram_size,
-                                     repetition_penalty=self.repetition_penalty,
-                                     MIN_ABC=self.MIN_ABC,
-                                     num_beams=self.num_beams,
-                                     temperature=self.temperature,
+                                     cfg=self.cfg,
                                      verbose=self.verbose)
             # store for future use
             self.objects[objectName] = thisObject
@@ -291,7 +256,7 @@ class WorldObject:
             return self.objects[propName]
         if propName in self.object:
             return self.object[propName]
-        print("error in",self.__repr__(),propName)
+        print("error in", self.__repr__(), "\nmissing property:",propName)
         raise ValueError("property not found!")
 
     def __repr__(self):
@@ -308,3 +273,69 @@ class WorldObject:
             return str(self.getProperty("description")).strip()
         except:
             return self.__repr__()
+
+
+class ListObject:
+    def __init__(
+        self,
+        templates,
+        textGenerator,
+        objectName,
+        n=3,
+        thisList=None,
+        uniqueKey=None,
+        objects=None,
+        cfg=None,
+        verbose=False
+        ):
+
+        self.objectName=objectName
+        self.n=n
+
+        uniqueKeys=set()
+
+        
+        if thisList is not None:
+            self.thisList=thisList
+        else:
+            self.thisList=[]
+
+            #build up list if not provided
+            while len(self.thisList)<n:
+                newObject = WorldObject(
+                    templates,
+                    textGenerator,
+                    objectName,
+                    objects=objects,
+                    cfg=cfg,
+                    verbose=verbose)
+                
+                if uniqueKey is None:
+                    self.thisList+=[newObject]
+                else:
+                    thisKey=str(newObject.getProperty(uniqueKey))
+                    if thisKey not in uniqueKeys:
+                        self.thisList+=[newObject]
+        
+        #list for random access
+        self.randomOrder=list(range(self.n))
+        random.shuffle(self.randomOrder)
+
+    def getProperty(self,propName):
+        #item
+        if propName.startswith("ITEM"):
+            whichItem=int(propName[4:])
+            return self.thisList[whichItem]
+
+        if propName=="RANDOM":
+            return self.thisList[self.randomOrder[0]]
+        
+        
+
+
+        
+
+            
+
+
+
