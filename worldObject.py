@@ -1,5 +1,6 @@
 import re
 import random
+import openai
 
 
 class WorldObject:
@@ -35,6 +36,10 @@ class WorldObject:
             self.objects = {}
         else:
             self.objects = objects
+
+        #need to intialize this here because of *ugh*
+        self.object={}
+
         self.filledTemplate = self.fillTemplate(templates[objectName])
 
         self.hiddenStates = None
@@ -43,30 +48,71 @@ class WorldObject:
             print("GOT FILLED TEMPLATE", self.objectName,
                   "\n\n", self.filledTemplate, "\n\n")
 
+        
+
         self.object = self.parseTemplate(self.filledTemplate)
+
+    def gpt3GenerateText_turbo(self,textInput):
+        #call gpt3 api
+        MODEL = "gpt-3.5-turbo"
+        response = openai.ChatCompletion.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "This system automatically completes text templates in the most logical way possible"},
+                {"role": "user", "content": "Please complete the following template"},
+                {"role": "user", "content": textInput}
+            ],
+            temperature=self.cfg["temperature"],
+            max_tokens=self.cfg["genTextAmount_max"]
+        )
+        #return response['choices'][0]['content']
+        result = ''
+        for choice in response.choices:
+            result += choice.message.content
+
+        return result
+    
+    def gpt3GenerateText(self,textInput):
+        #call gpt3 api
+        completion = openai.Completion.create(
+            engine="text-davinci-003", 
+            prompt=textInput,
+            stop="\n",
+            max_tokens=self.cfg["genTextAmount_max"]
+        )['choices'][0]['text']
+        return completion
+
 
     def generateTextWithInput(self, textInput, depth=0):
 
+        
         if depth > self.cfg["MAX_DEPTH"]:
             return "error"
 
-        input_ids = self.textGenerator['tokenizer'](
-            textInput, return_tensors="pt").input_ids
-        amt = input_ids.shape[1]
-        result = self.textGenerator['pipeline'](
-            textInput,
-            do_sample=True,
-            min_length=amt+self.cfg["genTextAmount_min"],
-            max_length=amt+self.cfg["genTextAmount_max"],
-            pad_token_id=50256,
-            return_full_text=False,
-            no_repeat_ngram_size=self.cfg["no_repeat_ngram_size"],
-            repetition_penalty=self.cfg["repetition_penalty"],
-            num_beams=self.cfg["num_beams"],
-            temperature=self.cfg["temperature"]
-        )
+        if self.textGenerator=="GPT3":
+            result = self.gpt3GenerateText(textInput)
+            lines=result.strip().split("\n")
+        elif self.textGenerator=="GPT3-turbo":
+            result = self.gpt3GenerateText_turbo(textInput)
+            lines=result.strip().split("\n")
+        else:
+            input_ids = self.textGenerator['tokenizer'](
+                textInput, return_tensors="pt").input_ids
+            amt = input_ids.shape[1]
+            result = self.textGenerator['pipeline'](
+                textInput,
+                do_sample=True,
+                min_length=amt+self.cfg["genTextAmount_min"],
+                max_length=amt+self.cfg["genTextAmount_max"],
+                pad_token_id=50256,
+                return_full_text=False,
+                no_repeat_ngram_size=self.cfg["no_repeat_ngram_size"],
+                repetition_penalty=self.cfg["repetition_penalty"],
+                num_beams=self.cfg["num_beams"],
+                temperature=self.cfg["temperature"]
+            )
 
-        lines = result[0]['generated_text'].strip().split("\n")
+            lines = result[0]['generated_text'].strip().split("\n")
 
 
         # remove len()==0 lines
@@ -118,7 +164,7 @@ class WorldObject:
 
             output += str(gotProp)
 
-            if self.verbose:
+            if self.verbose==3:
                 print("MATCH", thisMatch, gotProp)
 
             t = t+end
@@ -139,6 +185,7 @@ class WorldObject:
         objects = ["\n".join([line for line in o.split(
             "\n") if len(line) > 0]) for o in objects]
 
+
         if self.verbose:
             print(objects)
 
@@ -146,7 +193,7 @@ class WorldObject:
             sa = re.sub(r'[^a-zA-Z]+', '', s)
             return len(sa)
 
-        startIndex = None
+        startIndex = None    
 
         for i, o in enumerate(objects):
             if o == "#":
@@ -158,7 +205,11 @@ class WorldObject:
 
         objects = objects[startIndex:]
 
-        objects = [o for o in objects if countABC(o) > 0]
+        #remove empty objects
+        objects=[o for o in objects if len(o)>0]
+
+        #remove comments
+        objects = [o for o in objects if not o.startswith("#")]
 
         if startIndex is None:
             thisObject = objects[-1]  # by default choose last object
@@ -180,6 +231,26 @@ class WorldObject:
                         output[propName] += "\n"+line
                     else:
                         output[propName] = line
+        
+        
+        
+        #check for #NOREP pattern
+        orig_template=self.templates[self.objectName]
+        if "#NOREP\n" in orig_template:
+            lastObject = objects[-1]
+            i=orig_template.index("#NOREP\n")
+            new_template=orig_template[:i]+"\n\n"+lastObject+"\n\n"+orig_template[i:]
+
+            #get rid of excess newlines
+            new_template=re.sub("\n\n+\n","\n\n",new_template)
+
+            self.templates[self.objectName]=new_template
+
+            #print("orig template is",new_template)
+            #print("new template is",new_template)
+            
+        
+        
         return output
 
     def getObjwithProp(self, obj_and_prop, output):
@@ -197,9 +268,19 @@ class WorldObject:
         else:
             objectName = obj_and_prop
 
-        # handle saved objects
+        if self.verbose==2:
+            print("checking for object",objectName,"in",self.objects)
+            
+
+        # handle saved objectsGPT
         if objectName in self.objects:
             thisObject = self.objects[objectName]
+
+
+            if self.verbose==2:
+                print("about to die, looking for property",propName,"in",objectName,"=",thisObject)
+
+
             if propName is not None:
                 return thisObject.getProperty(propName)
             else:
@@ -211,15 +292,18 @@ class WorldObject:
                 print("generating text", objType,
                       obj_and_prop, "with template", output)
 
-            output = output.strip()  # remove trailing " "s
+            if self.textGenerator!="GPT3":
+                output = output.strip()  # remove trailing " "s
             #output = self.generateTextWithInput(output)
             text = self.generateTextWithInput(output)
-            if objectName != "TEXT":
+            if objectName != "TEXT" and propName is None:
+                if self.verbose:
+                    print("storing text",objectName,text)
                 self.objects[objectName] = text
             return text
         else:
             if self.verbose:
-                print("got prop", objectName, propName)
+                print("got prop", objectName, propName, objType, overrides)
             thisObject = self.getObject(objectName, objType, overrides)
             if propName is not None:
                 return thisObject.getProperty(propName)
@@ -236,8 +320,20 @@ class WorldObject:
                 # parse overrides "a=b,c=d,..."
                 objects = {}
                 for override in overrides.split(","):
-                    for k, v in override.split("="):
-                        objects[k] = self.getObject(v)
+                    k, v = override.split("=")
+                    gotV=None
+                    if "." in v:
+                        i=v.index(".")
+                        v0=v[:i]
+                        v1=v[i+1:]
+                        gotV=self.objects[v0].getProperty(v1)
+                    else:
+                        if v in self.objects:
+                            gotV=self.objects[v]
+                    if gotV:
+                        objects[k] = gotV
+                    else:
+                        print("this should never happen!",v,self.objects)
             # remove trailing digits
             if objType is None:
                 objType = re.sub(r'\d+$', '', objectName)
@@ -246,11 +342,30 @@ class WorldObject:
                                      cfg=self.cfg,
                                      verbose=self.verbose)
             # store for future use
+            if self.verbose:
+                print("storing object",objectName,thisObject)
             self.objects[objectName] = thisObject
             return self.objects[objectName]
 
+    def has(self,propName):
+        if propName in self.objects:
+            return True
+        if propName in self.object:
+            return True
+        return False
+
     def getProperty(self, propName):
-        if self.verbose:
+
+        #todo, handle multiple "."s
+        if "." in propName:
+            i=propName.index(".")
+            v0=propName[:i]
+            v1=propName[i+1:]
+            if self.verbose==3:
+                print("getting sub-property",v0,v1)
+            return self.getProperty[v0].getProperty(v1)
+
+        if self.verbose==3:
             print("getting property", propName, "from object", self.object)
         if propName in self.objects:
             return self.objects[propName]
@@ -269,9 +384,11 @@ class WorldObject:
         return "<world object:%s>\n" % self.objectName+r
 
     def __str__(self):
-        try:
+        #try:
+        if self.has("description"):
             return str(self.getProperty("description")).strip()
-        except:
+        #except:
+        else:
             return self.__repr__()
 
 

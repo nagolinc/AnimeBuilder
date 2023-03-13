@@ -1,4 +1,63 @@
 templates={
+    "plural":"""
+
+singular:
+cat
+plural:
+cats
+
+singular:
+mouse
+plural:
+mice
+
+singular:
+{singular:TEXT:}
+plural:
+{plural:TEXT:}
+description:
+{plural}
+
+""",
+    "nameToDescription":"""
+    
+name:
+Jan
+Description:
+Jan is a teenage girl with long blonde hair and a cute smile
+
+name:
+Hector
+Description:
+Hector is a jock who attends college and loves to play basketball
+
+name:
+{name:TEXT:}
+description:
+{description:TEXT:}
+    
+""",
+    "animal":"""
+    
+a list of animals
+
+#
+
+#NOREP
+
+description:
+cat
+
+description:
+dog
+
+description:
+horse
+
+description:
+cow
+    
+""",
     "color":"""    
 Output a list of colors
 
@@ -15,6 +74,10 @@ description:
 {TEXT}""",
     "monster":"""
 create a list of various fantasy monsters
+
+#
+
+#NOREP
 
 description:
 minotaur
@@ -54,7 +117,7 @@ description:
 Lily is a cute girl with long black hair who studies biology
 
 name:
-{TEXT}
+{name:TEXT:}
 gender:
 {TEXT}
 hair color:
