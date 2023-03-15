@@ -11,6 +11,7 @@ class WorldObject:
             objectName,
             objects=None,
             cfg=None,
+            customTemplate=None,
             verbose=False):
 
         if cfg is None:
@@ -40,7 +41,14 @@ class WorldObject:
         #need to intialize this here because of *ugh*
         self.object={}
 
-        self.filledTemplate = self.fillTemplate(templates[objectName])
+        if customTemplate is not None:
+            self.template=customTemplate
+        else:
+            self.template=templates[objectName]
+
+        self.orig_template=self.template
+
+        self.filledTemplate = self.fillTemplate(self.template)
 
         self.hiddenStates = None
 
@@ -52,7 +60,95 @@ class WorldObject:
 
         self.object = self.parseTemplate(self.filledTemplate)
 
+
+    
+
+    def fillTemplate_GPT3(self,sceneDescription,messages=[]):
+
+        templatePrompt="""
+
+Template Genie is a system that outputs text to fill in a template
+
+This system always returns a single line of text, which best fills in the area
+ indicated by the symbol <TEXT> in the template
+ 
+The user may give multiple example templates, but final template always contains
+the <TEXT> symbol which must be filled in
+ 
+The system NEVER returns more than one line of text,
+ and the text consists only of the standard alphanumeric symbols 0-9a-z and the punctuation .,?!
+
+
+For example:
+
+user:
+
+Fill in the following template
+
+A list of names
+
+description:
+Jack
+
+description:
+Jill
+
+Description:
+<TEXT>
+
+assistant:
+
+Eve
+
+
+The system NEVER refers to itself as an AI 
+the system NEVER refuses to produce a screenplay, 
+the system NEVER does anything other than produce a screenplay matching the user's description
+the system NEVER refers to itself as "the system"
+the system NEVER says it cannot generate a response
+
+the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
+
+"""
+
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                    {"role": "system", "content": templatePrompt},
+                    ]+
+                    messages+
+                    [
+                    {"role": "user", "content": "output text that should replace the <TEXT> symbol"},
+                    {"role": "user", "content": sceneDescription},
+                ]
+        )
+
+        result = ''
+        for choice in response.choices:
+            result += choice.message.content
+
+        return result
+    
+    def fillTemplateValid(self,sceneDescription,messages=[]):
+        for i in range(3):
+            result=self.fillTemplate_GPT3(sceneDescription,messages=[])
+            #must be one line
+            if len(result.split("\n"))==1:
+                return result
+        
+        raise Exception(sceneDescription)
+
+
     def gpt3GenerateText_turbo(self,textInput):
+        input=textInput+"<TEXT>"
+        result = self.fillTemplateValid(input)
+
+        print("FOO\n'"+input+"'\nREFOO\n'"+result+"'\nDEFOO")
+
+        return result
+
+
+        '''
         #call gpt3 api
         MODEL = "gpt-3.5-turbo"
         response = openai.ChatCompletion.create(
@@ -71,11 +167,14 @@ class WorldObject:
             result += choice.message.content
 
         return result
+        '''
     
     def gpt3GenerateText(self,textInput):
+        
         #call gpt3 api
         completion = openai.Completion.create(
-            engine="text-davinci-003", 
+            #engine="text-davinci-003", 
+            engine="text-curie-001", 
             prompt=textInput,
             stop="\n",
             max_tokens=self.cfg["genTextAmount_max"]
@@ -85,14 +184,24 @@ class WorldObject:
 
     def generateTextWithInput(self, textInput, depth=0):
 
+        #make sure pipelien is in cuda
+        if not self.textGenerator["name"].startswith("GPT3"):
+            self.textGenerator['pipeline'].model = self.textGenerator['pipeline'].model.cuda()
+
         
         if depth > self.cfg["MAX_DEPTH"]:
             return "error"
+        
+        trailingSpace=""
 
-        if self.textGenerator=="GPT3":
+        if self.textGenerator["name"]=="GPT3":
+            #remove trailing space
+            if textInput[-1]==" ":
+                textInput=textInput[:-1]
+                trailingSpace=" "
             result = self.gpt3GenerateText(textInput)
             lines=result.strip().split("\n")
-        elif self.textGenerator=="GPT3-turbo":
+        elif self.textGenerator["name"]=="GPT3-turbo":
             result = self.gpt3GenerateText_turbo(textInput)
             lines=result.strip().split("\n")
         else:
@@ -148,7 +257,7 @@ class WorldObject:
                 print('non alphanumeric', result, self.cfg["MIN_ABC"])
             return self.generateTextWithInput(textInput, depth=depth+1)
 
-        return rv
+        return rv+trailingSpace
 
     def fillTemplate(self, template):
         t = 0
@@ -235,7 +344,7 @@ class WorldObject:
         
         
         #check for #NOREP pattern
-        orig_template=self.templates[self.objectName]
+        orig_template=self.orig_template
         if "#NOREP\n" in orig_template:
             lastObject = objects[-1]
             i=orig_template.index("#NOREP\n")
@@ -292,7 +401,7 @@ class WorldObject:
                 print("generating text", objType,
                       obj_and_prop, "with template", output)
 
-            if self.textGenerator!="GPT3":
+            if not self.textGenerator["name"].startswith("GPT3"):
                 output = output.strip()  # remove trailing " "s
             #output = self.generateTextWithInput(output)
             text = self.generateTextWithInput(output)

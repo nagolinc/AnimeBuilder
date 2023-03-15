@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anime Creator</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        function submitForm(event, formId, url, resultId, inputToUpdate = null, successCallback = null) {
+            event.preventDefault();
+
+            const formData = $(`#${formId}`).serializeArray().reduce(function (obj, item) {
+                obj[item.name] = item.value;
+                return obj;
+            }, {});
+
+            $.ajax({
+                type: 'POST',
+                url,
+                data: JSON.stringify(formData),
+                contentType: 'application/json',
+                success: function (data) {
+                    $(`#${resultId}`).text(data);
+                    if (inputToUpdate) {
+                        $(`#${inputToUpdate}`).val(data);
+                    }
+
+                    if (successCallback) {
+                        successCallback();
+                    }
+
+                },
+                error: function (error) {
+                    console.error(error);
+                }
+            });
+        }
+
+        function updateHiddenNovelSummary() {
+            $('#chapters-form #hidden-novelSummary').val($('#characters-form #novelSummary').val());
+
+            $('#scenes-form #hidden-novelSummary').val($('#characters-form #novelSummary').val());
+            $('#scenes-form #hidden-numChapters').val($('#chapters-form #numChapters').val());
+            $('#scenes-form #hidden-characters').val($('#chapters-form #characters').val());
+
+            $('#movie-form #hidden-novelSummary').val($('#characters-form #novelSummary').val());
+            $('#movie-form #hidden-numChapters').val($('#chapters-form #numChapters').val());
+            $('#movie-form #hidden-characters').val($('#chapters-form #characters').val());
+            $('#movie-form #hidden-chapters').val($('#scenes-form #chapters').val());
+            $('#movie-form #hidden-numScenes').val($('#scenes-form #numScenes').val());
+
+        }
+
+        var backgroundMusic = null
+
+        function playMovie(movieId) {
+            $.ajax({
+                type: 'GET',
+                url: `/get_next_element/${movieId}`,
+                success: function (data) {
+                    // Handle the returned data (e.g., render the movie scene)
+                    console.log(data);
+
+                    if ('debug' in data) {
+                        //just keep going
+                        playMovie(movieId)
+                    }
+
+                    if ('image' in data) {
+                        //draw image on canvas
+                        // Get a reference to the canvas element
+                        const canvas = document.getElementById('myCanvas');
+
+                        // Get the 2D rendering context from the canvas
+                        const ctx = canvas.getContext('2d');
+
+                        // Create a new Image object
+                        const image = new Image();
+
+                        // Set the source of the Image object to the URL
+                        image.src = data['image'];
+
+                        // Add an event listener for the 'load' event on the Image object
+                        image.addEventListener('load', () => {
+                            // Draw the image on the canvas using the drawImage method
+                            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+                            //then keep going
+                            playMovie(movieId)
+                        });
+
+                    }
+
+                    if ('caption' in data) {
+                        $('#caption').text(data['caption']);
+
+                        setTimeout(function () {
+                            playMovie(movieId);
+                        }, data['duration'] * 1000);
+                    }
+
+                    if ('dialogue' in data) {
+                        var audio = new Audio(data['speech']);
+                        audio.play();
+                        let caption = data['name'] + ": " + data['dialogue']
+
+                        $('#caption').text(caption);
+
+                        setTimeout(function () {
+                            playMovie(movieId);
+                        }, data['duration'] * 1000);
+
+                    }
+
+                    if ('music' in data) {
+
+                        var audio = new Audio(data['music']);
+                        audio.loop = true;
+                        audio.play();
+
+                        if (backgroundMusic) {
+                            backgroundMusic.pause();
+                        }
+
+                        backgroundMusic = audio
+
+                        playMovie(movieId);
+
+                    }
+
+
+                },
+                error: function (error) {
+                    console.error(error);
+                }
+            });
+        }
+
+        $(document).ready(function () {
+            $('#summary-form').submit(function (event) {
+                submitForm(event, 'summary-form', '/create_summary', 'summary-result', 'characters-form #novelSummary');
+            });
+
+            $('#characters-form').submit(function (event) {
+                submitForm(event, 'characters-form', '/create_characters', 'characters-result', 'chapters-form #characters', updateHiddenNovelSummary);
+            });
+
+            $('#chapters-form').submit(function (event) {
+                submitForm(event, 'chapters-form', '/create_chapters', 'chapters-result', 'scenes-form #chapters', updateHiddenNovelSummary);
+            });
+
+            $('#scenes-form').submit(function (event) {
+                submitForm(event, 'scenes-form', '/create_scenes', 'scenes-result', 'movie-form #scenes', updateHiddenNovelSummary);
+            });
+
+            $('#movie-form').submit(function (event) {
+                submitForm(event, 'movie-form', '/create_movie', 'movie-result');
+            });
+
+            $('#playMovie').click(function () {
+                //hide all of the forms
+                $('#hideForms').hide();
+
+                //const movieId = "your_movie_id"; // Replace with the actual movie ID
+                const movieId = $('#movie-result').text();
+                playMovie(movieId);
+            });
+
+            $('#characters-form #novelSummary').on('input', function () {
+                updateHiddenNovelSummary();
+            });
+
+            $('#chapters-form #novelSummary').on('input', function () {
+                updateHiddenNovelSummary();
+            });
+
+            $('#scenes-form #novelSummary').on('input', function () {
+                updateHiddenNovelSummary();
+            });
+
+            updateHiddenNovelSummary();
+
+
+        });
+    </script>
+</head>
+
+<body>
+    <h1>Anime Creator</h1>
+
+    <div id="hideForms">
+
+        <h2>Step 1: Create Summary</h2>
+        <form id="summary-form">
+            <label for="storyObjects">Story Objects:</label>
+            <br>
+            <textarea id="storyObjects" name="storyObjects" rows="16" cols="100"></textarea>
+            <br>
+            <button type="submit">Create Summary</button>
+        </form>
+        <pre id="summary-result"></pre>
+
+        <h2>Step 2: Create Characters</h2>
+        <form id="characters-form">
+            <label for="novelSummary">Novel Summary:</label>
+            <br>
+            <textarea id="novelSummary" name="novelSummary" rows="16" cols="100"></textarea>
+            <br>
+            <button type="submit">Create Characters</button>
+        </form>
+        <pre id="characters-result"></pre>
+
+        <h2>Step 3: Create Chapters</h2>
+        <form id="chapters-form">
+            <label for="numChapters">Number of Chapters:</label>
+            <input type="number" id="numChapters" name="numChapters" value="3">
+            <br>
+            <label for="characters">Characters:</label>
+            <br>
+            <textarea id="characters" name="characters" rows="16" cols="100"></textarea>
+            <br>
+            <input type="hidden" id="hidden-novelSummary" name="novelSummary">
+            <button type="submit">Create Chapters</button>
+        </form>
+        <pre id="chapters-result"></pre>
+
+        <h2>Step 4: Create Scenes</h2>
+        <form id="scenes-form">
+            <label for="numScenes">Number of Scenes per Chapter:</label>
+            <input type="number" id="numScenes" name="numScenes" value="3">
+            <br>
+            <label for="chapters">Chapters:</label>
+            <br>
+            <textarea id="chapters" name="chapters" rows="16" cols="100"></textarea>
+            <br>
+            <input type="hidden" id="hidden-novelSummary" name="novelSummary">
+            <input type="hidden" id="hidden-characters" name="characters">
+            <input type="hidden" id="hidden-numChapters" name="numChapters">
+            <button type="submit">Create Scenes</button>
+        </form>
+        <pre id="scenes-result"></pre>
+
+        <h2>Step 5: Create Movie</h2>
+        <form id="movie-form">
+            <input type="hidden" id="hidden-novelSummary" name="novelSummary">
+            <input type="hidden" id="hidden-characters" name="characters">
+            <input type="hidden" id="hidden-numChapters" name="numChapters">
+            <input type="hidden" id="hidden-chapters" name="chapters">
+            <input type="hidden" id="hidden-numScenes" name="numScenes">
+
+            <label for="scenes">Scenes:</label>
+            <br>
+            <textarea id="scenes" name="scenes" rows="16" cols="100"></textarea>
+            <br>
+
+            <button type="submit">Create Movie</button>
+        </form>
+        <pre id="movie-result"></pre>
+
+    </div>
+
+    <button type="submit" id="playMovie">Play Movie</button>
+
+    <br>
+
+    <canvas id="myCanvas" width="1024" height="1024"></canvas>
+    <br>
+    <span style="font-size: 20px;" id="caption">Once Upon a Time</span>
