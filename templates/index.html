@@ -8,36 +8,49 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
         function submitForm(event, formId, url, resultId, inputToUpdate = null, successCallback = null) {
-            event.preventDefault();
+            if (event) {
+                event.preventDefault();
+            }
 
             const formData = $(`#${formId}`).serializeArray().reduce(function (obj, item) {
                 obj[item.name] = item.value;
                 return obj;
             }, {});
 
-            $.ajax({
-                type: 'POST',
-                url,
-                data: JSON.stringify(formData),
-                contentType: 'application/json',
-                success: function (data) {
-                    $(`#${resultId}`).text(data);
-                    if (inputToUpdate) {
-                        $(`#${inputToUpdate}`).val(data);
-                    }
+            return new Promise((resolve, reject) => {
+                $.ajax({
+                    type: 'POST',
+                    url,
+                    data: JSON.stringify(formData),
+                    contentType: 'application/json',
+                    success: function (data) {
+                        $(`#${resultId}`).text(data);
+                        if (inputToUpdate) {
+                            $(`#${inputToUpdate}`).val(data);
+                        }
 
-                    if (successCallback) {
-                        successCallback();
-                    }
+                        if (successCallback) {
+                            successCallback();
+                        }
 
-                },
-                error: function (error) {
-                    console.error(error);
-                }
+                        resolve(data);
+                    },
+                    error: function (error) {
+                        console.error(error);
+                        reject(error);
+                    }
+                });
             });
         }
 
         function updateHiddenNovelSummary() {
+
+            $('#characters-form #hidden-storyObjects').val($('#summary-form #storyObjects').val());
+            $('#chapters-form #hidden-storyObjects').val($('#summary-form #storyObjects').val());
+            $('#scenes-form #hidden-storyObjects').val($('#summary-form #storyObjects').val());
+            $('#movie-form #hidden-storyObjects').val($('#summary-form #storyObjects').val());
+
+            $('#chapters-form #hidden-novelSummary').val($('#characters-form #novelSummary').val());
             $('#chapters-form #hidden-novelSummary').val($('#characters-form #novelSummary').val());
 
             $('#scenes-form #hidden-novelSummary').val($('#characters-form #novelSummary').val());
@@ -53,8 +66,12 @@
         }
 
         var backgroundMusic = null
+        var playbackStopped = false
 
         function playMovie(movieId) {
+
+            if (playbackStopped) return;
+
             $.ajax({
                 type: 'GET',
                 url: `/get_next_element/${movieId}`,
@@ -129,6 +146,17 @@
 
                     }
 
+                    if ('done' in data) {
+
+                        if (backgroundMusic) {
+                            backgroundMusic.pause();
+                        }
+
+                        if ($('#autoplay').is(':checked')) {
+                            doAutoplay()
+                        }
+                    }
+
 
                 },
                 error: function (error) {
@@ -136,6 +164,29 @@
                 }
             });
         }
+
+        async function doAutoplay() {
+            // Step 1: Create Summary
+            await submitForm(null, 'summary-form', '/create_summary', 'summary-result', 'characters-form #novelSummary');
+
+            // Step 2: Create Characters
+            await submitForm(null, 'characters-form', '/create_characters', 'characters-result', 'chapters-form #characters', updateHiddenNovelSummary);
+
+            // Step 3: Create Chapters
+            await submitForm(null, 'chapters-form', '/create_chapters', 'chapters-result', 'scenes-form #chapters', updateHiddenNovelSummary);
+
+            // Step 4: Create Scenes
+            await submitForm(null, 'scenes-form', '/create_scenes', 'scenes-result', 'movie-form #scenes', updateHiddenNovelSummary);
+
+            // Step 5: Create Movie
+            await submitForm(null, 'movie-form', '/create_movie', 'movie-result');
+
+            // Play the movie
+            const movieId = $('#movie-result').text();
+            playMovie(movieId);
+        }
+
+
 
         $(document).ready(function () {
             $('#summary-form').submit(function (event) {
@@ -162,9 +213,22 @@
                 //hide all of the forms
                 $('#hideForms').hide();
 
+                playbackStopped = false
+
                 //const movieId = "your_movie_id"; // Replace with the actual movie ID
                 const movieId = $('#movie-result').text();
                 playMovie(movieId);
+            });
+
+            $('#stopMovie').click(function () {
+                //hide all of the forms
+                $('#hideForms').show();
+
+                playbackStopped = true
+
+                if (backgroundMusic) {
+                    backgroundMusic.pause()
+                }
             });
 
             $('#characters-form #novelSummary').on('input', function () {
@@ -195,21 +259,22 @@
         <form id="summary-form">
             <label for="storyObjects">Story Objects:</label>
             <br>
-            <textarea id="storyObjects" name="storyObjects" rows="16" cols="100"></textarea>
+            <textarea id="storyObjects" name="storyObjects" rows="32" cols="200"></textarea>
             <br>
             <button type="submit">Create Summary</button>
         </form>
-        <pre id="summary-result"></pre>
+        <pre id="summary-result" style="display:none"></pre>
 
         <h2>Step 2: Create Characters</h2>
         <form id="characters-form">
             <label for="novelSummary">Novel Summary:</label>
             <br>
-            <textarea id="novelSummary" name="novelSummary" rows="16" cols="100"></textarea>
+            <textarea id="novelSummary" name="novelSummary" rows="32" cols="200"></textarea>
             <br>
+            <input type="hidden" id="hidden-storyObjects" name="storyObjects">
             <button type="submit">Create Characters</button>
         </form>
-        <pre id="characters-result"></pre>
+        <pre id="characters-result" style="display:none"></pre>
 
         <h2>Step 3: Create Chapters</h2>
         <form id="chapters-form">
@@ -218,12 +283,13 @@
             <br>
             <label for="characters">Characters:</label>
             <br>
-            <textarea id="characters" name="characters" rows="16" cols="100"></textarea>
+            <textarea id="characters" name="characters" rows="32" cols="200"></textarea>
             <br>
+            <input type="hidden" id="hidden-storyObjects" name="storyObjects">
             <input type="hidden" id="hidden-novelSummary" name="novelSummary">
             <button type="submit">Create Chapters</button>
         </form>
-        <pre id="chapters-result"></pre>
+        <pre id="chapters-result" style="display:none"></pre>
 
         <h2>Step 4: Create Scenes</h2>
         <form id="scenes-form">
@@ -232,17 +298,19 @@
             <br>
             <label for="chapters">Chapters:</label>
             <br>
-            <textarea id="chapters" name="chapters" rows="16" cols="100"></textarea>
+            <textarea id="chapters" name="chapters" rows="32" cols="200"></textarea>
             <br>
+            <input type="hidden" id="hidden-storyObjects" name="storyObjects">
             <input type="hidden" id="hidden-novelSummary" name="novelSummary">
             <input type="hidden" id="hidden-characters" name="characters">
             <input type="hidden" id="hidden-numChapters" name="numChapters">
             <button type="submit">Create Scenes</button>
         </form>
-        <pre id="scenes-result"></pre>
+        <pre id="scenes-result" style="display:none"></pre>
 
         <h2>Step 5: Create Movie</h2>
         <form id="movie-form">
+            <input type="hidden" id="hidden-storyObjects" name="storyObjects">
             <input type="hidden" id="hidden-novelSummary" name="novelSummary">
             <input type="hidden" id="hidden-characters" name="characters">
             <input type="hidden" id="hidden-numChapters" name="numChapters">
@@ -251,7 +319,7 @@
 
             <label for="scenes">Scenes:</label>
             <br>
-            <textarea id="scenes" name="scenes" rows="16" cols="100"></textarea>
+            <textarea id="scenes" name="scenes" rows="32" cols="200"></textarea>
             <br>
 
             <button type="submit">Create Movie</button>
@@ -261,9 +329,11 @@
     </div>
 
     <button type="submit" id="playMovie">Play Movie</button>
+    <button type="submit" id="stopMovie">Stop Movie</button>
+    <input type="checkbox" id="autoplay">Autoplay</button>
 
     <br>
 
     <canvas id="myCanvas" width="1024" height="1024"></canvas>
     <br>
-    <span style="font-size: 20px;" id="caption">Once Upon a Time</span>
+    <span style="font-size: 20px;display: inline-block; width: 1024px;" id="caption">Once Upon a Time</span>

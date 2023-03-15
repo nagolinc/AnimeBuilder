@@ -26,32 +26,35 @@ def create_summary():
 @app.route('/create_characters', methods=['POST'])
 def create_characters():
     data = request.get_json()
+    story_objects = data.get("storyObjects", {})
     novel_summary = data.get("novelSummary", {})
-    characters = animeBuilder.create_characters(novel_summary)
+    characters = animeBuilder.create_characters(story_objects,novel_summary)
     return jsonify(characters)
 
 
 @app.route('/create_chapters', methods=['POST'])
 def create_chapters():
     data = request.get_json()
+    story_objects = data.get("storyObjects", {})
     novel_summary = data.get("novelSummary", {})
     characters = data.get("characters", {})
     num_chapters = int(data.get("numChapters", 3))
     chapters = animeBuilder.create_chapters(
-        novel_summary, characters, num_chapters)
+        story_objects,novel_summary, characters, num_chapters)
     return jsonify(chapters)
 
 
 @app.route('/create_scenes', methods=['POST'])
 def create_scenes():
     data = request.get_json()
+    story_objects = data.get("storyObjects", {})
     novel_summary = data.get("novelSummary", {})
     characters = data.get("characters", {})
     chapters = data.get("chapters", [])
     num_chapters = int(data.get("numChapters", 3))
     num_scenes = int(data.get("numScenes", 3))
     all_scenes = animeBuilder.create_scenes(
-        novel_summary, characters, chapters, num_chapters, num_scenes)
+        story_objects,novel_summary, characters, chapters, num_chapters, num_scenes)
     return jsonify(all_scenes)
 
 
@@ -61,6 +64,7 @@ movies = {}
 @app.route('/create_movie', methods=['POST'])
 def create_movie():
     data = request.get_json()
+    story_objects = data.get("storyObjects", {})
     novel_summary = data.get('novelSummary')
     characters = data.get('characters')
     chapters = data.get('chapters')
@@ -71,7 +75,7 @@ def create_movie():
     movie_id = str(uuid.uuid4())
     # movie_generator = animeBuilder.generate_movie_data(novel_summary, characters, chapters, scenes)
     movie_generator = animeBuilder.generate_movie_data(
-        novel_summary, characters, chapters, all_scenes, num_chapters, num_scenes)
+        story_objects,novel_summary, characters, chapters, all_scenes, num_chapters, num_scenes)
     movies[movie_id] = movie_generator
 
     # return jsonify({"movie_id": movie_id})
@@ -88,7 +92,8 @@ def get_next_element(movie_id):
     try:
         element = next(movie_generator)
     except StopIteration:
-        return jsonify({"error": "No more elements"}), 400
+        #return jsonify({"error": "No more elements"}), 400
+        return jsonify({"done": "No more elements"}), 200
 
     if "image" in element:
         fName = str(uuid.uuid4())+".png"
@@ -110,13 +115,34 @@ if __name__ == '__main__':
                         default="andite/anything-v4.0", help="Name of the model")
     parser.add_argument('--promptSuffix', type=str,
                         default=", anime drawing", help="add to image prompt")
+    
+
+    parser.add_argument('--negativePrompt', type=str,
+                        default="collage, grayscale, text, watermark, lowres, bad anatomy, bad hands, text, error, missing fingers, cropped, worst quality, low quality, normal quality, jpeg artifacts, watermark, blurry, grayscale, deformed weapons, deformed face, deformed human body",
+                        help="negative prompt")
+    
+    parser.add_argument('--extraTemplatesFile', type=str,
+                        default=None,
+                        help="file with template overrides")
+
     args = parser.parse_args()
 
     animeBuilder = AnimeBuilder(num_inference_steps=15,
                                 textModel="GPT3",
                                 diffusionModel=args.modelName,
                                 doImg2Img=True,
+                                negativePrompt=args.negativePrompt,
                                 suffix=args.promptSuffix
                                 )
+    
+    if args.extraTemplatesFile:
+        with open(args.extraTemplatesFile, "r") as file:
+            code = file.read()
+            templateOverrides=eval(code)
+            for k,v in templateOverrides.items():
+                animeBuilder.templates[k]=v
+    
 
-    app.run(debug=False)
+
+
+    app.run(debug=True)

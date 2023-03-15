@@ -41,7 +41,7 @@ class WorldObject:
         #need to intialize this here because of *ugh*
         self.object={}
 
-        if customTemplate is not None:
+        if customTemplate is not None and len(customTemplate.strip())>0:
             self.template=customTemplate
         else:
             self.template=templates[objectName]

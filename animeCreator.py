@@ -888,6 +888,7 @@ class AnimeBuilder:
             portraits[name] = portrait
             yield {"debug": description}
             yield {"image": portrait}
+            yield {"caption": "new character: %s"%description,"duration":1}
 
 
         
@@ -1241,6 +1242,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             #drop blank lines
             if len(line.strip())==0:
                 continue
+            line=line.strip()
             #tags should be lowercase
             if line[-1]==":":
                 line=line.lower()
@@ -1376,6 +1378,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             #drop blank lines
             if len(line.strip())==0:
                 continue
+            line=line.strip()
             #tags should be lowercase
             if line[-1]==":":
                 line=line.lower()
@@ -1505,10 +1508,19 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             objects={"storyObjects":storyObjects}
         )
 
-        return str(novelSummary)
+        novel_summary = str(novelSummary)
+        return novel_summary.split('\n', 1)[1]
 
 
-    def create_characters(self,novel_summary):
+
+    def create_characters(self,story_objects,novel_summary):
+
+        storyObjects=WorldObject(
+            self.templates,
+            self.textGenerator,
+            "storyObjects",
+            customTemplate=story_objects
+        )
 
         novelSummary=WorldObject(
             self.templates,
@@ -1521,13 +1533,23 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             self.templates,
             self.textGenerator,
             "novelCharacters",
-            objects={"novelSummary":novelSummary},
+            objects={"novelSummary":novelSummary,
+                     "storyObjects":storyObjects
+                     },
         )
 
-        return str(characters)
+        return str(characters).split('\n', 1)[1]
+        #return str(characters)
     
 
-    def create_chapters(self,novel_summary, _characters, num_chapters,nTrials=3):
+    def create_chapters(self,story_objects,novel_summary, _characters, num_chapters,nTrials=3):
+
+        storyObjects=WorldObject(
+            self.templates,
+            self.textGenerator,
+            "storyObjects",
+            customTemplate=story_objects
+        )
 
         novelSummary=WorldObject(
                 self.templates,
@@ -1550,10 +1572,10 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             nTrials=nTrials
         )
 
-        return str(chapters)
+        return str(chapters).split('\n', 1)[1]
         
 
-    def create_scenes(self,novel_summary, _characters, _chapters, num_chapters, num_scenes,nTrials=3):
+    def create_scenes(self,story_objects,novel_summary, _characters, _chapters, num_chapters, num_scenes,nTrials=3):
 
         novelSummary=WorldObject(
                 self.templates,
@@ -1585,13 +1607,20 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             nTrials=nTrials
         )
 
-        return "\n===\n".join([str(x) for x in scenes])
+        return "\n===\n".join([str(x).split('\n', 1)[1] for x in scenes])
 
 
-    def generate_movie_data(self,novel_summary, _characters, _chapters, scenes, num_chapters, num_scenes):
+    def generate_movie_data(self,story_objects,novel_summary, _characters, _chapters, scenes, num_chapters, num_scenes):
         # Process the inputs and generate the movie data
         # This is where you would include your existing code to generate the movie elements
         # For demonstration purposes, we'll just yield some dummy elements
+
+        storyObjects=WorldObject(
+            self.templates,
+            self.textGenerator,
+            "storyObjects",
+            customTemplate=story_objects
+        )
 
         #convert back into correct format
         novelSummary=WorldObject(
@@ -1690,6 +1719,10 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
         for whichChapter in range(1,num_chapters+1):
             for whichScene in range(1,num_scenes+1):
+
+
+                yield {"debug":"chapter %d scene %d"%(whichChapter,whichScene)}
+
                 if previousScene is not None:
                     previousMessages=previousScene[1]
                     
@@ -1708,12 +1741,17 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                     thisScene=self.continueSceneGPT(novelSummary,characters,chapters,allScenes,whichChapter,whichScene)
                     
                 s=thisScene[0]
+
+                if novelSummary.has("characterType"):
+                    promptSuffix=", "+novelSummary.getProperty("characterType")+self.suffix
+                else:
+                    promptSuffix=self.suffix
                     
                     
                 anime=self.transcriptToAnime(
                     s,
                     portrait_size=256,
-                    promptSuffix=self.suffix,
+                    promptSuffix=promptSuffix,
                     savedcharacters=savedcharacters,
                     savedPortraits=savedPortraits,
                     savedVoices=savedVoices,

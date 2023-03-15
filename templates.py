@@ -125,7 +125,7 @@ hair color:
 weapon:
 {TEXT}
 description:
-{TEXT}""",
+{description text:TEXT:}""",
     "setting":"""
 a list of movie settings
 
