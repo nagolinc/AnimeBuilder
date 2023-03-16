@@ -1102,6 +1102,32 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
         return result
     
+    def classify_text_openai(self,text,categories = ["setting", "action", "sound effect"]):    
+        prompt = f"Classify the following line of text into one of these categories: setting, action, or sound effect:\n\n{text}\n\nCategory:"
+
+        response = openai.Completion.create(
+            engine="text-curie-001",
+            prompt=prompt,
+            max_tokens=50,
+            n=1,
+            stop=None,
+            temperature=0.1,
+        )
+
+        response_text = response.choices[0].text.strip().lower()
+        print(response_text)
+
+        # Find the best matching category
+        best_category = None
+        best_match = 0
+        for category in categories:
+            match = response_text.count(category)
+            if match > best_match:
+                best_match = match
+                best_category = category
+
+        return best_category
+    
 
     def validateScreenplay(self,screenplay):
         score=0
@@ -1130,23 +1156,44 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 continue
             #check for music
             tag=line.split(":")[0].strip().lower()
+            description=line.split(":")[1].strip()
             if tag=="music":
                 print("found music",line)
                 hasMusic=True
+
+            #fix some bad tags
+            if tag=="sfx":
+                line="sound effect: "+description
+
+            if "dialogue" in tag:
+                category=self.classify_text_openai(description)
+                line=category+": "+description
+
             #description cannot be empty
             if len(line.split(":")[1].strip())==0:
                 score+=1
                 continue
             #remove ""s (but don't penalize score)
-            re.sub("\"","",line)
+            line=re.sub("\"","",line)
             #remove ()'s
             if re.search("\([^\)]*\)",line):
+                tag=re.sub("\([^\)]*\)","",tag).strip()
+                for match in re.findall(r'\((.*?)\)', line):
+                    category=self.classify_text_openai(match)
+                    out+=[category+": "+tag+" "+match]
+
                 score+=1
-            line=re.sub("\([^\)]*\)","",line)
+                line=re.sub("\([^\)]*\)","",line)
+
+            #remove *asides*
+            if re.search("\*[^*]*\*",line):
+                score+=1
+                line=re.sub("\*[^*]*\*","",line)
+            
             #remove ""'s
-            line=re.sub("[^a-zA-Z0-9_.?!,';: ]","",line)
             if re.search("[^a-zA-Z0-9_.?!,';: ]",line):
                 score+=1
+            line=re.sub("[^a-zA-Z0-9_.?!,';: ]","",line)            
             if len(line.strip())==0:
                 score+=1
                 continue
@@ -1215,11 +1262,38 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         print(summarizeNovelMessage)
         
         print(sceneSummary)
+
+        examplePrompt="{mainCharacter}, {supportingCharacter1}, and {supportingCharacter2} stand in an empty room looking around and waiting for the movie to begin".format(
+            mainCharacter=characters.getProperty("main character name"),
+            supportingCharacter1=characters.getProperty("supporting character 1 name"),
+            supportingCharacter2=characters.getProperty("supporting character 2 name")
+           )
+
+        exampleTranscript="""setting: An empty room
+music: A piano plays in the background
+{MainCharacter}: I wonder when the movie will start.
+{SupportingCharacter1}: I hope it starts soon, I'm getting antsy.
+{SupportingCharacter2}: Yeah, same here. I don't like waiting around.
+action: {MainCharacter} paces the floor nervously.
+{MainCharacter}: Well, we're here now, might as well make the most of it.
+{SupportingCharacter1}: Agreed. I heard this movie is really good, so it should be worth the wait.
+action: {SupportingCharacter2} shrugs nervously
+{SupportingCharacter2}: I hope so. I hate waiting for something that ends up being a disappointment.
+{MainCharacter}: Let's try to stay positive. I have a feeling this is going to be a great movie.
+sound Effect: A door opens and a group of people enter the room.
+{MainCharacter}: Looks like the movie is about to start. Finally!
+
+""".format(MainCharacter=characters.getProperty("main character name"),
+           SupportingCharacter1=characters.getProperty("supporting character 1 name"),
+           SupportingCharacter2=characters.getProperty("supporting character 2 name")
+           )
         
         if previousMessages is None:
         
             messages=[
-                {"role":"user","content":str(summarizeNovelMessage)}        
+                {"role":"user","content":examplePrompt},
+                {"role":"assistant","content":exampleTranscript},
+                {"role":"user","content":str(summarizeNovelMessage)}
             ]+[
                 {"role":"user","content":"""
 
@@ -1239,6 +1313,11 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 """.format(whichChapter=whichChapter,whichScene=whichScene,sceneSummary=sceneSummary)
                 }
             ]
+
+
+        print("FOO",previousMessages,messages)
+
+
             
         
         #response=animeBuilder.createScreenplay(sceneSummary,messages)
@@ -1807,8 +1886,8 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                     
                     #trim messages when n>3 1+3*n=10
                     
-                    if len(previousMessages)>10:
-                        previousMessages=previousMessages[:1]+previousMessages[-9:]
+                    if len(previousMessages)>12:
+                        previousMessages=previousMessages[:3]+previousMessages[-9:]
                     
                     #thisScene=continueSceneGPT(whichChapter,whichScene,previousMessages)
                     thisScene=self.continueSceneGPT(novelSummary,characters,chapters,allScenes,whichChapter,whichScene,previousMessages)
