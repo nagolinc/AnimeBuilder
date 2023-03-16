@@ -1,0 +1,10 @@
+# .gitignore
+
+# Ignore PNG files in static/samples
+static/samples/*.png
+
+# Ignore MP3 files in static/samples
+static/samples/*.mp3
+
+# Ignore WAV files in static/samples
+static/samples/*.wav

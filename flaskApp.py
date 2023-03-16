@@ -76,10 +76,40 @@ def create_movie():
     # movie_generator = animeBuilder.generate_movie_data(novel_summary, characters, chapters, scenes)
     movie_generator = animeBuilder.generate_movie_data(
         story_objects,novel_summary, characters, chapters, all_scenes, num_chapters, num_scenes)
-    movies[movie_id] = movie_generator
+    movies[movie_id] = MovieGeneratorWrapper(movie_generator)
 
     # return jsonify({"movie_id": movie_id})
     return jsonify(movie_id)
+
+
+import concurrent.futures
+
+class MovieGeneratorWrapper:
+    def __init__(self, generator):
+        self.generator = generator
+        self._next_element_future = None
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self._fetch_next_element()
+
+    def _get_next_element(self):
+        try:
+            element = next(self.generator)
+            if "image" in element:
+                fName = str(uuid.uuid4()) + ".png"
+                element["image"].save(savePath + fName)
+                element["image"] = savePath + fName
+            return element
+        except StopIteration:
+            return None
+
+    def _fetch_next_element(self):
+        self._next_element_future = self._executor.submit(self._get_next_element)
+
+    def get_next_element(self):
+        current_element = self._next_element_future.result()
+        if current_element is not None:
+            self._fetch_next_element()
+        return current_element
 
 
 @app.route('/get_next_element/<string:movie_id>', methods=['GET'])
@@ -89,16 +119,9 @@ def get_next_element(movie_id):
     if movie_generator is None:
         return jsonify({"error": "Movie not found"}), 404
 
-    try:
-        element = next(movie_generator)
-    except StopIteration:
-        #return jsonify({"error": "No more elements"}), 400
+    element = movie_generator.get_next_element()
+    if element is None:
         return jsonify({"done": "No more elements"}), 200
-
-    if "image" in element:
-        fName = str(uuid.uuid4())+".png"
-        element["image"].save(savePath+fName)
-        element["image"] = savePath+fName
 
     return jsonify(element)
 

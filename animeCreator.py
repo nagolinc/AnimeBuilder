@@ -21,7 +21,7 @@ from ipywidgets import Audio  # no good, doesn't stop when clear display
 import ipywidgets as widgets
 from torch import autocast
 import time
-from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler, StableDiffusionImg2ImgPipeline, UniPCMultistepScheduler
+from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler, StableDiffusionImg2ImgPipeline, UniPCMultistepScheduler, DiffusionPipeline
 from diffusers.models import AutoencoderKL
 
 
@@ -64,6 +64,8 @@ class AnimeBuilder:
     ):
         self.savePath=savePath
         self.saveImages=saveImages
+
+        self.ignored_words=set(["the","name","setting","music","action","sound","effect"])
         
         self.textModel=textModel
 
@@ -224,7 +226,13 @@ class AnimeBuilder:
 
         '''
 
-        pipe = StableDiffusionPipeline.from_pretrained(diffusionModel,vae=vae, torch_dtype=torch.float16)
+        #pipe = StableDiffusionPipeline.from_pretrained(diffusionModel,vae=vae, torch_dtype=torch.float16,custom_pipeline="composable_stable_diffusion")
+        pipe = DiffusionPipeline.from_pretrained(
+            diffusionModel,
+            vae=vae, 
+            torch_dtype=torch.float16,
+            custom_pipeline="lpw_stable_diffusion",
+        )
 
         # change to UniPC scheduler
         pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
@@ -306,9 +314,41 @@ class AnimeBuilder:
 
         if self.doImg2Img:
             img2Input = image.resize((1024, 1024))
+
+            
+            #some nonsense to handle long prompts, based off of https://github.com/huggingface/diffusers/issues/2136#issuecomment-1409978949
+            #todo figure out what this 
+            max_length = self.pipe.tokenizer.model_max_length
+
+
+            input_ids = self.pipe.tokenizer(prompt, return_tensors="pt").input_ids
+            input_ids = input_ids.to("cuda")
+
+            #negative_ids = self.pipe.tokenizer(self.negativePrompt, truncation=False, padding="max_length", max_length=input_ids.shape[-1], return_tensors="pt").input_ids                                                                                                     
+            negative_ids = self.pipe.tokenizer(self.negativePrompt, truncation=True, padding="max_length", max_length=input_ids.shape[-1], return_tensors="pt").input_ids
+            negative_ids = negative_ids.to("cuda")
+
+            padding_length = max_length - (input_ids.shape[-1] % max_length)
+
+            if padding_length > 0:
+                input_ids = torch.cat([input_ids, torch.full((input_ids.shape[0], padding_length), self.pipe.tokenizer.pad_token_id, dtype=torch.long, device="cuda")], dim=1)
+                negative_ids = torch.cat([negative_ids, torch.full((negative_ids.shape[0], padding_length), self.pipe.tokenizer.pad_token_id, dtype=torch.long, device="cuda")], dim=1)
+
+            concat_embeds = []
+            neg_embeds = []
+            for i in range(0, input_ids.shape[-1], max_length):
+                concat_embeds.append(self.pipe.text_encoder(input_ids[:, i: i + max_length])[0])
+                neg_embeds.append(self.pipe.text_encoder(negative_ids[:, i: i + max_length])[0])
+
+            prompt_embeds = torch.cat(concat_embeds, dim=1)
+            negative_prompt_embeds = torch.cat(neg_embeds, dim=1)
+
+
             with autocast("cuda"):
                 img2 = self.img2img(
-                    prompt=prompt,
+                    #prompt=prompt,
+                    prompt_embeds=prompt_embeds, 
+                    negative_prompt_embeds=negative_prompt_embeds,
                     image=img2Input,
                     strength=0.25,
                     guidance_scale=7.5,
@@ -720,13 +760,10 @@ class AnimeBuilder:
 
         tags=[x for x in tags if len(x.split())<4]
 
-        ignored_words=set(["the","name","setting","music","action","sound","effect"])
-
-
         tag_bundles=[]
 
         for tag in tags:
-            tagset=set(tag.split())-ignored_words
+            tagset=set(tag.split())-self.ignored_words
             if len(tagset)==0:
                 continue
             t=0
@@ -758,8 +795,7 @@ class AnimeBuilder:
     
 
     def normalizeTag(self,tag,tag_bundles):
-        ignored_words=set(["the","name","setting","music","action","sound","effect"])
-        tagset=set(tag.split())-ignored_words
+        tagset=set(tag.split())-self.ignored_words
         if len(tagset)==0:
             print("this should never happen!")
             return tag
@@ -772,14 +808,28 @@ class AnimeBuilder:
     
 
     def mergeName(self,name1,names):
-        ignored_words=set(["the","name","setting","music","action","sound","effect"])
-        s1=set(name1.lower().split())-ignored_words
+        s1=set(name1.lower().split())-self.ignored_words
         for name2 in names:
-            s2=set(name2.lower().split())-ignored_words
+            s2=set(name2.lower().split())-self.ignored_words
             if s1.intersection(s2):
                 return name2
             
         return name1
+    
+
+    def enhancePrompt(self,prompt,characters):
+        output=prompt
+        didEnhance=False
+        
+        for name in characters.keys():
+            n=set([w.lower() for w in name.split() if len(w)>2])-self.ignored_words
+            for w in n:
+                if w in prompt:       
+                    output+=" "+characters[name].getProperty("description")
+                    didEnhance=True
+                    break
+        
+        return output,didEnhance
 
 
     def transcriptToAnime(
@@ -883,6 +933,7 @@ class AnimeBuilder:
             description = thisCharacter.getProperty("description")
             prompt = "portrait of "+gender+", "+description + \
                 ", solid white background"+promptSuffix
+
             portrait = self.doGen(
                 prompt, num_inference_steps=self.num_inference_steps)
             portraits[name] = portrait
@@ -906,8 +957,16 @@ class AnimeBuilder:
             tag=line.split(":")[0].strip().lower()
             description=line.split(":")[1].strip().lower()
             if tag =="setting":
+
+                prompt=description+promptSuffix
+
+                prompt,didEnhance=self.enhancePrompt(prompt,_characters)
+                if didEnhance:
+                    print("enhanced prompt",prompt)
+
+
                 settingImage = self.doGen(
-                    description+promptSuffix, num_inference_steps=self.num_inference_steps)
+                    prompt, num_inference_steps=self.num_inference_steps)
                 
                 yield {"image": settingImage}
                 yield {"caption": "Setting: %s"%description,
@@ -928,9 +987,14 @@ class AnimeBuilder:
                 
 
             elif tag=="action":
+                
+                prompt=description+promptSuffix
+                prompt,didEnhance=self.enhancePrompt(prompt,_characters)
+                if didEnhance:
+                    print("enhanced prompt",prompt)
 
                 actionImage = self.doGen(
-                    description+promptSuffix, num_inference_steps=self.num_inference_steps)
+                    prompt, num_inference_steps=self.num_inference_steps)
                 
                 #for now this seems better
                 settingImage=actionImage
