@@ -79,8 +79,8 @@ class AnimeBuilder:
 
         if cfg is None:
             cfg = {
-                "genTextAmount_min": 15,
-                "genTextAmount_max": 30,
+                "genTextAmount_min": 30,
+                "genTextAmount_max": 100,
                 "no_repeat_ngram_size": 8,
                 "repetition_penalty": 2.0,
                 "MIN_ABC": 4,
@@ -1041,6 +1041,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
     def validateScreenplay(self,screenplay):
         score=0
+        hasMusic=False
         out=[]
         for line in screenplay.split("\n"):
             #skip blank lines
@@ -1054,6 +1055,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             if len(line.split(":"))!=2:
                 score+=1
                 continue
+            
             #tag cannot be empty
             if len(line.split(":")[0].strip())==0:
                 score+=1
@@ -1062,6 +1064,11 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             if len(line.split(":")[0].strip().split())>4:
                 score+=1
                 continue
+            #check for music
+            tag=line.split(":")[0].strip().lower()
+            if tag=="music":
+                print("found music",line)
+                hasMusic=True
             #description cannot be empty
             if len(line.split(":")[1].strip())==0:
                 score+=1
@@ -1080,6 +1087,13 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 score+=1
                 continue
             out+=[line]
+
+        #add music if there isn't any
+        if hasMusic==False:
+            out=["music: %s"%self.riffusionSuffix]+out
+
+        print(out,hasMusic)
+
         return out, score
     
 
