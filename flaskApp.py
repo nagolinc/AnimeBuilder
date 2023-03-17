@@ -4,7 +4,7 @@ import argparse
 from flask import Flask, render_template, request, jsonify
 import json
 import animeCreator
-from animeCreator import AnimeBuilder
+from animeCreator import AnimeBuilder, getFilename
 import uuid
 
 app = Flask(__name__)
@@ -72,7 +72,7 @@ def create_movie():
     num_chapters = int(data.get("numChapters", 3))
     num_scenes = int(data.get("numScenes", 3))
 
-    movie_id = str(uuid.uuid4())
+    movie_id = getFilename("", "mov")
     # movie_generator = animeBuilder.generate_movie_data(novel_summary, characters, chapters, scenes)
     movie_generator = animeBuilder.generate_movie_data(
         story_objects,novel_summary, characters, chapters, all_scenes, num_chapters, num_scenes)
@@ -95,9 +95,9 @@ class MovieGeneratorWrapper:
         try:
             element = next(self.generator)
             if "image" in element:
-                fName = str(uuid.uuid4()) + ".png"
-                element["image"].save(savePath + fName)
-                element["image"] = savePath + fName
+                fName =getFilename(savePath, "png")
+                element["image"].save( fName)
+                element["image"] = fName
             return element
         except StopIteration:
             return None

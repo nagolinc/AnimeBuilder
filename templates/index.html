@@ -4,6 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:wght@800&display=swap" />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@900&display=swap" rel="stylesheet">
     <title>Anime Creator</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
@@ -165,24 +168,67 @@
             });
         }
 
+        function updateCaptionWithMovieTitle() {
+            const novelSummary = $('#characters-form #novelSummary').val()
+            const summaryLines = novelSummary.split('\n');
+            let movieTitle = 'Worst Anime Ever';
+            for (let i = 0; i < summaryLines.length - 1; i++) {
+                if (summaryLines[i].toLowerCase().trim() === 'title:') {
+                    movieTitle = summaryLines[i + 1];
+                    break;
+                }
+            }
+            $('#caption').text(movieTitle);
+
+            //draw logo
+            const canvas = document.getElementById("myCanvas");
+            const ctx = canvas.getContext("2d");
+
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw the logo
+            const logo = new Image();
+            logo.src = "./static/logo.png"; // Replace with the actual path to your logo file
+            logo.onload = function () {
+                ctx.drawImage(logo, 0, 0, canvas.width, canvas.height);
+            };
+
+
+        }
+
         async function doAutoplay() {
-            // Step 1: Create Summary
-            await submitForm(null, 'summary-form', '/create_summary', 'summary-result', 'characters-form #novelSummary');
+            const maxRetries = 3;
+            let retryCount = 0;
+            let stepFailed = false;
 
-            // Step 2: Create Characters
-            await submitForm(null, 'characters-form', '/create_characters', 'characters-result', 'chapters-form #characters', updateHiddenNovelSummary);
+            do {
+                stepFailed = false;
 
-            // Step 3: Create Chapters
-            await submitForm(null, 'chapters-form', '/create_chapters', 'chapters-result', 'scenes-form #chapters', updateHiddenNovelSummary);
+                try {
+                    // Step 1: Create Summary
+                    await submitForm(null, 'summary-form', '/create_summary', 'summary-result', 'characters-form #novelSummary');
 
-            // Step 4: Create Scenes
-            await submitForm(null, 'scenes-form', '/create_scenes', 'scenes-result', 'movie-form #scenes', updateHiddenNovelSummary);
+                    // Step 2: Create Characters
+                    await submitForm(null, 'characters-form', '/create_characters', 'characters-result', 'chapters-form #characters', updateHiddenNovelSummary);
 
-            // Step 5: Create Movie
-            await submitForm(null, 'movie-form', '/create_movie', 'movie-result');
+                    // Step 3: Create Chapters
+                    await submitForm(null, 'chapters-form', '/create_chapters', 'chapters-result', 'scenes-form #chapters', updateHiddenNovelSummary);
 
+                    // Step 4: Create Scenes
+                    await submitForm(null, 'scenes-form', '/create_scenes', 'scenes-result', 'movie-form #scenes', updateHiddenNovelSummary);
+
+                    // Step 5: Create Movie
+                    await submitForm(null, 'movie-form', '/create_movie', 'movie-result', 'movie-result-field');
+                } catch (error) {
+                    stepFailed = true
+                }
+            } while (retryCount < maxRetries && stepFailed)
+
+
+            updateCaptionWithMovieTitle();
             // Play the movie
-            const movieId = $('#movie-result').text();
+            const movieId = $('#movie-result-field').val();
             playMovie(movieId);
         }
 
@@ -206,7 +252,7 @@
             });
 
             $('#movie-form').submit(function (event) {
-                submitForm(event, 'movie-form', '/create_movie', 'movie-result');
+                submitForm(event, 'movie-form', '/create_movie', 'movie-result', 'movie-result-field');
             });
 
             $('#playMovie').click(function () {
@@ -215,8 +261,10 @@
 
                 playbackStopped = false
 
+                updateCaptionWithMovieTitle();
+
                 //const movieId = "your_movie_id"; // Replace with the actual movie ID
-                const movieId = $('#movie-result').text();
+                const movieId = $('#movie-result-field').val();
                 playMovie(movieId);
             });
 
@@ -245,9 +293,155 @@
 
             updateHiddenNovelSummary();
 
+            let originalSize = null;
+
+            function updateCaptionStyle() {
+                let caption = document.getElementById('caption');
+                let canvas = document.getElementById('myCanvas');
+
+                if (document.fullscreenElement) {
+                    let minDimension = Math.min(screen.width, screen.height);
+                    caption.style.fontSize = (30 * (minDimension / 1024)) + 'px';
+                    caption.style.width = (minDimension - 256 * minDimension / 1024) + 'px';
+
+                    caption.style.position = 'fixed';
+                    caption.style.bottom = '10px';
+                    caption.style.left = (canvas.offsetLeft) + 'px';
+                } else {
+                    caption.style.fontSize = '30px';
+                    caption.style.width = 'calc(1024px - 256px)';
+
+                    caption.style.position = 'absolute';
+                    caption.style.bottom = '10px';
+                    caption.style.left = '0';
+                }
+            }
+
+            async function toggleFullscreen() {
+                let container = document.getElementsByClassName('container')[0];
+                let canvas = document.getElementById('myCanvas');
+                let ctx = canvas.getContext('2d');
+
+                // Store the current canvas content as an image
+                let tempCanvasImage = new Image();
+                tempCanvasImage.src = canvas.toDataURL();
+
+                // Toggle fullscreen mode
+                if (!document.fullscreenElement) {
+                    await container.requestFullscreen();
+                } else {
+                    await document.exitFullscreen();
+                }
+
+                if (document.fullscreenElement) {
+                    let minDimension = Math.min(screen.width, screen.height);
+                    canvas.width = minDimension;
+                    canvas.height = minDimension;
+
+                    // Center the container in fullscreen mode
+                    container.style.width = '100%';
+                    container.style.height = '100%';
+                    container.style.display = 'flex';
+                    container.style.justifyContent = 'center';
+                    container.style.alignItems = 'center';
+                } else {
+                    canvas.width = 1024;
+                    canvas.height = 1024;
+
+                    // Reset container styles when exiting fullscreen
+                    container.style.width = '';
+                    container.style.height = '';
+                    container.style.display = '';
+                    container.style.justifyContent = '';
+                    container.style.alignItems = '';
+                }
+
+                if (document.fullscreenElement) {
+                    let minDimension = Math.min(screen.width, screen.height);
+                    canvas.width = minDimension;
+                    canvas.height = minDimension;
+                } else {
+                    canvas.width = 1024;
+                    canvas.height = 1024;
+                }
+                // Redraw the stored image onto the resized canvas
+                ctx.drawImage(tempCanvasImage, 0, 0, canvas.width, canvas.height);
+
+                // Update caption style
+                updateCaptionStyle();
+            }
+
+            function handleFullscreenChange() {
+                let canvas = document.getElementById('myCanvas');
+                let ctx = canvas.getContext('2d');
+
+                // Store the current canvas content as an image
+                let tempCanvasImage = new Image();
+                tempCanvasImage.src = canvas.toDataURL();
+
+                if (!document.fullscreenElement) {
+                    canvas.width = 1024;
+                    canvas.height = 1024;
+
+                    // Reset container styles when exiting fullscreen
+                    let container = document.getElementsByClassName('container')[0];
+                    container.style.width = '';
+                    container.style.height = '';
+                    container.style.display = '';
+                    container.style.justifyContent = '';
+                    container.style.alignItems = '';
+
+                    tempCanvasImage.addEventListener('load', function () {
+                        // Redraw the stored image onto the resized canvas
+                        ctx.drawImage(tempCanvasImage, 0, 0, canvas.width, canvas.height);
+                        // Update caption style
+                        updateCaptionStyle();
+                    });
+                }
+            }
+
+            document.addEventListener('fullscreenchange', handleFullscreenChange);
+
+            $("#fullscreen-toggle").on("click", function () {
+                toggleFullscreen()
+            });
 
         });
     </script>
+
+    <style>
+        .container {
+            position: relative;
+        }
+
+        #myCanvas {
+            display: block;
+        }
+
+
+        .caption {
+            font-weight: 900;
+            font-family: 'Roboto', sans-serif;
+            color: black;
+            text-shadow:
+                -1px -1px 0 white,
+                1px -1px 0 white,
+                -1px 1px 0 white,
+                1px 1px 0 white;
+            font-size: 30px;
+            display: inline-block;
+            width: calc(1024px - 256px);
+            /* Updated width */
+            position: absolute;
+            bottom: 10px;
+            left: 0;
+            right: 256px;
+            /* Updated right */
+            text-align: center;
+        }
+    </style>
+
+
 </head>
 
 <body>
@@ -324,16 +518,20 @@
 
             <button type="submit">Create Movie</button>
         </form>
-        <pre id="movie-result"></pre>
+        <pre id="movie-result" style="display:none"></pre>
+        <input type="text" id="movie-result-field" cols="100"></input>
 
     </div>
 
     <button type="submit" id="playMovie">Play Movie</button>
     <button type="submit" id="stopMovie">Stop Movie</button>
     <input type="checkbox" id="autoplay">Autoplay</button>
+    <button id="fullscreen-toggle">Toggle Fullscreen</button>
+
 
     <br>
 
-    <canvas id="myCanvas" width="1024" height="1024"></canvas>
-    <br>
-    <span style="font-size: 30px;display: inline-block; width: 1024px;" id="caption">Once Upon a Time</span>
+    <div class="container">
+        <canvas id="myCanvas" width="1024" height="1024"></canvas>
+        <span class="caption" id="caption">Once Upon a Time</span>
+    </div>

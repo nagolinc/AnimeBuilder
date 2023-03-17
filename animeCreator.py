@@ -39,6 +39,14 @@ from riffusion import get_music
 import logging
 import uuid
 
+import datetime
+import uuid
+
+def getFilename(path, extension):
+    current_datetime = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"{path}{current_datetime}-{uuid.uuid4()}.{extension}"
+    return filename
+
 
 class AnimeBuilder:
 
@@ -376,8 +384,8 @@ class AnimeBuilder:
 
     def textToSpeech(self, text, voice):
 
-        mp3file_name=self.savePath+str(uuid.uuid4())+".mp3"
-        wavfile_name=self.savePath+str(uuid.uuid4())+".wav"
+        mp3file_name = getFilename(self.savePath, "mp3")
+        wavfile_name = getFilename(self.savePath, "wav")
 
         try:
             with autocast("cuda"):
@@ -403,8 +411,8 @@ class AnimeBuilder:
 
     def generate_track_by_prompt_vol(self, prompt, vol=1.0, duration=8, loop=True, autoplay=True):
 
-        mp3file_name=self.savePath+str(uuid.uuid4())+".mp3"
-        wavfile_name=self.savePath+str(uuid.uuid4())+".wav"
+        mp3file_name = getFilename(self.savePath, "mp3")
+        wavfile_name = getFilename(self.savePath, "wav")
 
         if self.mubert:
 
@@ -1115,7 +1123,6 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         )
 
         response_text = response.choices[0].text.strip().lower()
-        print(response_text)
 
         # Find the best matching category
         best_category = None
@@ -1154,6 +1161,10 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             if len(line.split(":")[0].strip().split())>4:
                 score+=1
                 continue
+            #line shouldn't be very long
+            if len(line)>240:
+                score+=1
+                continue
             #check for music
             tag=line.split(":")[0].strip().lower()
             description=line.split(":")[1].strip()
@@ -1169,26 +1180,30 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 category=self.classify_text_openai(description)
                 line=category+": "+description
 
+            if "supporting character" in tag:
+                score+=1
+                continue
+
             #description cannot be empty
             if len(line.split(":")[1].strip())==0:
                 score+=1
                 continue
             #remove ""s (but don't penalize score)
             line=re.sub("\"","",line)
-            #remove ()'s
-            if re.search("\([^\)]*\)",line):
-                tag=re.sub("\([^\)]*\)","",tag).strip()
-                for match in re.findall(r'\((.*?)\)', line):
-                    category=self.classify_text_openai(match)
-                    out+=[category+": "+tag+" "+match]
+            
+            # remove ()'s, *asides*, and [braces]
+            patterns = [r'\((.*?)\)', r'\*(.*?)\*', r'\[(.*?)\]', r'\{(.*?)\}']
+            for pattern in patterns:
+                if re.search(pattern, line):
+                    tag = re.sub(pattern, "", tag).strip()
+                    for match in re.findall(pattern, line):
+                        category = self.classify_text_openai(match)
+                        out += [category + ": " + tag + " " + match]
 
-                score+=1
-                line=re.sub("\([^\)]*\)","",line)
+                    score += 1
+                    line = re.sub(pattern, "", line)
 
-            #remove *asides*
-            if re.search("\*[^*]*\*",line):
-                score+=1
-                line=re.sub("\*[^*]*\*","",line)
+            #remove []'s
             
             #remove ""'s
             if re.search("[^a-zA-Z0-9_.?!,';: ]",line):
@@ -1203,7 +1218,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         if hasMusic==False:
             out=["music: %s"%self.riffusionSuffix]+out
 
-        print(out,hasMusic)
+        #print(out,hasMusic)
 
         return out, score
     
@@ -1245,7 +1260,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
 
 
-    def continueSceneGPT(self,novelSummary,characters,chapters,allChapters,whichChapter,whichScene,previousMessages=None,max_tokens=1000,verbose=False):
+    def continueSceneGPT(self,novelSummary,characters,chapters,allChapters,whichChapter,whichScene,previousMessages=None,num_chapters=12,num_scenes=5,max_tokens=1000,verbose=False):
         
         summarizeNovelMessage=WorldObject(
                 self.templates,
@@ -1262,6 +1277,9 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         print(summarizeNovelMessage)
         
         print(sceneSummary)
+
+        if whichChapter==num_chapters and whichScene==num_scenes:
+            sceneSummary+=" This is the last scene, so make sure to give the story a satisfying conclusion."
 
         examplePrompt="{mainCharacter}, {supportingCharacter1}, and {supportingCharacter2} stand in an empty room looking around and waiting for the movie to begin".format(
             mainCharacter=characters.getProperty("main character name"),
@@ -1314,12 +1332,7 @@ sound Effect: A door opens and a group of people enter the room.
                 }
             ]
 
-
-        print("FOO",previousMessages,messages)
-
-
-            
-        
+                    
         #response=animeBuilder.createScreenplay(sceneSummary,messages)
         response=self.getValidScreenplay(sceneSummary,previousMessages=messages)
         #response=animeBuilder.getValidScreenplay(sceneSummary)
@@ -1863,9 +1876,9 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         )
 
         savedcharacters={
-            str(mainCharacter.getProperty("name")):mainCharacter,
-            str(supportingCharacter1.getProperty("name")):supportingCharacter1,
-            str(supportingCharacter2.getProperty("name")):supportingCharacter2,
+            str(mainCharacter.getProperty("name").lower()):mainCharacter,
+            str(supportingCharacter1.getProperty("name").lower()):supportingCharacter1,
+            str(supportingCharacter2.getProperty("name").lower()):supportingCharacter2,
             str(antagonist.getProperty("name")):antagonist,
         }
         savedPortraits={}
@@ -1890,12 +1903,12 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                         previousMessages=previousMessages[:3]+previousMessages[-9:]
                     
                     #thisScene=continueSceneGPT(whichChapter,whichScene,previousMessages)
-                    thisScene=self.continueSceneGPT(novelSummary,characters,chapters,allScenes,whichChapter,whichScene,previousMessages)
+                    thisScene=self.continueSceneGPT(novelSummary,characters,chapters,allScenes,whichChapter,whichScene,previousMessages,num_chapters=num_chapters,num_scenes=num_scenes)
                     
                 else:
                     
                     #thisScene=continueSceneGPT(whichChapter,whichScene)
-                    thisScene=self.continueSceneGPT(novelSummary,characters,chapters,allScenes,whichChapter,whichScene)
+                    thisScene=self.continueSceneGPT(novelSummary,characters,chapters,allScenes,whichChapter,whichScene,num_chapters=num_chapters,num_scenes=num_scenes)
                     
                 s=thisScene[0]
 
@@ -1913,7 +1926,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                     savedPortraits=savedPortraits,
                     savedVoices=savedVoices,
                     savedGenders=savedGenders,
-                    aggressiveMerging=True,
+                    aggressiveMerging=False,
                 )
                 for storyElement in anime:
                     yield storyElement
