@@ -40,7 +40,7 @@ def create_chapters():
     characters = data.get("characters", {})
     num_chapters = int(data.get("numChapters", 3))
     chapters = animeBuilder.create_chapters(
-        story_objects,novel_summary, characters, num_chapters)
+        story_objects,novel_summary, characters, num_chapters,nTrials=nTrials)
     return jsonify(chapters)
 
 
@@ -54,7 +54,7 @@ def create_scenes():
     num_chapters = int(data.get("numChapters", 3))
     num_scenes = int(data.get("numScenes", 3))
     all_scenes = animeBuilder.create_scenes(
-        story_objects,novel_summary, characters, chapters, num_chapters, num_scenes)
+        story_objects,novel_summary, characters, chapters, num_chapters, num_scenes,nTrials=nTrials)
     return jsonify(all_scenes)
 
 
@@ -75,7 +75,8 @@ def create_movie():
     movie_id = getFilename("", "mov")
     # movie_generator = animeBuilder.generate_movie_data(novel_summary, characters, chapters, scenes)
     movie_generator = animeBuilder.generate_movie_data(
-        story_objects,novel_summary, characters, chapters, all_scenes, num_chapters, num_scenes)
+        story_objects,novel_summary, characters, chapters, all_scenes, num_chapters, num_scenes,
+        aggressive_merging=aggressive_merging)
     movies[movie_id] = MovieGeneratorWrapper(movie_generator)
 
     # return jsonify({"movie_id": movie_id})
@@ -147,8 +148,19 @@ if __name__ == '__main__':
     parser.add_argument('--extraTemplatesFile', type=str,
                         default=None,
                         help="file with template overrides")
+    
+    parser.add_argument('--ntrials', type=int, default=5, help='Number of trials (default: 5)')
+    
+    parser.add_argument('--disable-aggressive-merging', action='store_true', help='Disable aggressive merging')
 
     args = parser.parse_args()
+
+    nTrials=args.ntrials
+
+    if args.disable_aggressive_merging:
+        aggressive_merging=False
+    else:
+        aggressive_merging=True
 
     animeBuilder = AnimeBuilder(num_inference_steps=15,
                                 textModel="GPT3",

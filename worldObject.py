@@ -177,7 +177,8 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             engine="text-curie-001", 
             prompt=textInput,
             stop="\n",
-            max_tokens=self.cfg["genTextAmount_max"]
+            max_tokens=self.cfg["genTextAmount_max"],
+            frequency_penalty=self.cfg["repetition_penalty"],
         )['choices'][0]['text']
         return completion
 
