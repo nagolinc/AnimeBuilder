@@ -6,6 +6,7 @@ import json
 import animeCreator
 from animeCreator import AnimeBuilder, getFilename
 import uuid
+from flask_ngrok2 import run_with_ngrok
 
 app = Flask(__name__)
 
@@ -153,6 +154,10 @@ if __name__ == '__main__':
     
     parser.add_argument('--disable-aggressive-merging', action='store_true', help='Disable aggressive merging')
 
+    parser.add_argument('--img2img', action='store_true', help='upscale with img2img')
+
+    parser.add_argument('--ngrok', action='store_true', help='use ngrok tunnel')
+
     args = parser.parse_args()
 
     nTrials=args.ntrials
@@ -165,7 +170,7 @@ if __name__ == '__main__':
     animeBuilder = AnimeBuilder(num_inference_steps=15,
                                 textModel="GPT3",
                                 diffusionModel=args.modelName,
-                                doImg2Img=True,
+                                doImg2Img=args.img2img,
                                 negativePrompt=args.negativePrompt,
                                 suffix=args.promptSuffix
                                 )
@@ -178,6 +183,8 @@ if __name__ == '__main__':
                 animeBuilder.templates[k]=v
     
 
-
-
-    app.run(debug=True)
+    if args.ngrok:
+        run_with_ngrok(app, auth_token=os.environ["NGROK_TOKEN"])
+        app.run()
+    else:
+        app.run(debug=True)
