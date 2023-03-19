@@ -172,9 +172,9 @@ if __name__ == '__main__':
         aggressive_merging = True
 
     if args.img2img:
-        portrait_size = 128
+        portrait_size = 256
     else:
-        portrait_size = 64
+        portrait_size = 128
 
     animeBuilder = AnimeBuilder(num_inference_steps=15,
                                 textModel="GPT3",

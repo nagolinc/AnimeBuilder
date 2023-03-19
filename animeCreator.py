@@ -840,6 +840,9 @@ class AnimeBuilder:
                     break
 
         return output, didEnhance
+    
+    
+
 
     def transcriptToAnime(
         self,
@@ -1605,7 +1608,7 @@ Remember, the scenes should focus only on the described chapter, not what happen
                     bestNovel = w
                     bestScore = score
                     bestMessages = messages
-        print("failed to generate novel", score)
+        print("failed to generate novel", foundScenes)
         return bestNovel, bestMessages
 
     def chaptersToScenes(
@@ -1792,7 +1795,8 @@ Remember, the scenes should focus only on the described chapter, not what happen
 
         return "\n===\n".join([str(x).split('\n', 1)[1] for x in scenes])
 
-    def generate_movie_data(self, story_objects, novel_summary, _characters, _chapters, scenes, num_chapters, num_scenes,aggressive_merging=True):
+    def generate_movie_data(self, story_objects, novel_summary, _characters, _chapters, scenes, num_chapters, num_scenes,aggressive_merging=True,
+                            portrait_size=128):
         # Process the inputs and generate the movie data
         # This is where you would include your existing code to generate the movie elements
         # For demonstration purposes, we'll just yield some dummy elements
@@ -1964,7 +1968,7 @@ Remember, the scenes should focus only on the described chapter, not what happen
 
                 anime = self.transcriptToAnime(
                     s,
-                    portrait_size=256,
+                    portrait_size=portrait_size,
                     promptSuffix=promptSuffix,
                     savedcharacters=savedcharacters,
                     savedPortraits=savedPortraits,
