@@ -1,3 +1,4 @@
+import concurrent.futures
 import os
 import openai
 import argparse
@@ -29,7 +30,7 @@ def create_characters():
     data = request.get_json()
     story_objects = data.get("storyObjects", {})
     novel_summary = data.get("novelSummary", {})
-    characters = animeBuilder.create_characters(story_objects,novel_summary)
+    characters = animeBuilder.create_characters(story_objects, novel_summary)
     return jsonify(characters)
 
 
@@ -41,7 +42,7 @@ def create_chapters():
     characters = data.get("characters", {})
     num_chapters = int(data.get("numChapters", 3))
     chapters = animeBuilder.create_chapters(
-        story_objects,novel_summary, characters, num_chapters,nTrials=nTrials)
+        story_objects, novel_summary, characters, num_chapters, nTrials=nTrials)
     return jsonify(chapters)
 
 
@@ -55,7 +56,7 @@ def create_scenes():
     num_chapters = int(data.get("numChapters", 3))
     num_scenes = int(data.get("numScenes", 3))
     all_scenes = animeBuilder.create_scenes(
-        story_objects,novel_summary, characters, chapters, num_chapters, num_scenes,nTrials=nTrials)
+        story_objects, novel_summary, characters, chapters, num_chapters, num_scenes, nTrials=nTrials)
     return jsonify(all_scenes)
 
 
@@ -76,15 +77,14 @@ def create_movie():
     movie_id = getFilename("", "mov")
     # movie_generator = animeBuilder.generate_movie_data(novel_summary, characters, chapters, scenes)
     movie_generator = animeBuilder.generate_movie_data(
-        story_objects,novel_summary, characters, chapters, all_scenes, num_chapters, num_scenes,
-        aggressive_merging=aggressive_merging)
+        story_objects, novel_summary, characters, chapters, all_scenes, num_chapters, num_scenes,
+        aggressive_merging=aggressive_merging,
+        portrait_size=portrait_size)
     movies[movie_id] = MovieGeneratorWrapper(movie_generator)
 
     # return jsonify({"movie_id": movie_id})
     return jsonify(movie_id)
 
-
-import concurrent.futures
 
 class MovieGeneratorWrapper:
     def __init__(self, generator):
@@ -97,15 +97,16 @@ class MovieGeneratorWrapper:
         try:
             element = next(self.generator)
             if "image" in element:
-                fName =getFilename(savePath, "png")
-                element["image"].save( fName)
+                fName = getFilename(savePath, "png")
+                element["image"].save(fName)
                 element["image"] = fName
             return element
         except StopIteration:
             return None
 
     def _fetch_next_element(self):
-        self._next_element_future = self._executor.submit(self._get_next_element)
+        self._next_element_future = self._executor.submit(
+            self._get_next_element)
 
     def get_next_element(self):
         current_element = self._next_element_future.result()
@@ -140,48 +141,55 @@ if __name__ == '__main__':
                         default="andite/anything-v4.0", help="Name of the model")
     parser.add_argument('--promptSuffix', type=str,
                         default=", anime drawing", help="add to image prompt")
-    
 
     parser.add_argument('--negativePrompt', type=str,
                         default="collage, grayscale, text, watermark, lowres, bad anatomy, bad hands, text, error, missing fingers, cropped, worst quality, low quality, normal quality, jpeg artifacts, watermark, blurry, grayscale, deformed weapons, deformed face, deformed human body",
                         help="negative prompt")
-    
+
     parser.add_argument('--extraTemplatesFile', type=str,
                         default=None,
                         help="file with template overrides")
-    
-    parser.add_argument('--ntrials', type=int, default=5, help='Number of trials (default: 5)')
-    
-    parser.add_argument('--disable-aggressive-merging', action='store_true', help='Disable aggressive merging')
 
-    parser.add_argument('--img2img', action='store_true', help='upscale with img2img')
+    parser.add_argument('--ntrials', type=int, default=5,
+                        help='Number of trials (default: 5)')
 
-    parser.add_argument('--ngrok', action='store_true', help='use ngrok tunnel')
+    parser.add_argument('--disable-aggressive-merging',
+                        action='store_true', help='Disable aggressive merging')
+
+    parser.add_argument('--img2img', action='store_true',
+                        help='upscale with img2img')
+
+    parser.add_argument('--ngrok', action='store_true',
+                        help='use ngrok tunnel')
 
     args = parser.parse_args()
 
-    nTrials=args.ntrials
+    nTrials = args.ntrials
 
     if args.disable_aggressive_merging:
-        aggressive_merging=False
+        aggressive_merging = False
     else:
-        aggressive_merging=True
+        aggressive_merging = True
+
+    if args.img2img:
+        portrait_size = 128
+    else:
+        portrait_size = 64
 
     animeBuilder = AnimeBuilder(num_inference_steps=15,
                                 textModel="GPT3",
                                 diffusionModel=args.modelName,
                                 doImg2Img=args.img2img,
                                 negativePrompt=args.negativePrompt,
-                                suffix=args.promptSuffix
+                                suffix=args.promptSuffix,
                                 )
-    
+
     if args.extraTemplatesFile:
         with open(args.extraTemplatesFile, "r") as file:
             code = file.read()
-            templateOverrides=eval(code)
-            for k,v in templateOverrides.items():
-                animeBuilder.templates[k]=v
-    
+            templateOverrides = eval(code)
+            for k, v in templateOverrides.items():
+                animeBuilder.templates[k] = v
 
     if args.ngrok:
         run_with_ngrok(app, auth_token=os.environ["NGROK_TOKEN"])
