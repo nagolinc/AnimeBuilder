@@ -10,6 +10,9 @@
     <title>Anime Creator</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+
+        console.log("here0")
+
         function submitForm(event, formId, url, resultId, inputToUpdate = null, successCallback = null) {
             if (event) {
                 event.preventDefault();
@@ -70,24 +73,57 @@
 
         var backgroundMusic = null
         var playbackStopped = false
+        let isWaitingForResponse = false;
 
-        function playMovie(movieId) {
+        function loadImage(src) {
 
-            if (playbackStopped) return;
+            console.log("loaded img",src)
+
+            if(src==null){
+                return
+            }
+
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.src = src;
+                image.onload = () => resolve(image);
+                image.onerror = () => reject(new Error(`Failed to load image: ${src}`));
+            });
+        }
+
+        function playMovie(movieId, count) {
+
+            if(count==null){
+                count=-1
+            }
+
+            if (playbackStopped || isWaitingForResponse) return;
+            //if (playbackStopped) return;
+
+            isWaitingForResponse = true;
+
+            let url = `/get_next_element/${movieId}?count=${count}`
 
             $.ajax({
                 type: 'GET',
-                url: `/get_next_element/${movieId}`,
+                url: url,
                 success: function (data) {
                     // Handle the returned data (e.g., render the movie scene)
                     console.log(data);
 
                     if ('debug' in data) {
+
+                        //check if this is a new scene
+                        if (data['debug'] == 'new scene') {
+                            $("#whichChapter").val(data["chapter"])
+                            $("#whichScene").val(data["scene"])
+                        }
                         //just keep going
-                        playMovie(movieId)
+                        isWaitingForResponse = false;
+                        playMovie(movieId,count+1)
                     }
 
-                    if ('image' in data) {
+                    else if ('image' in data) {
                         //draw image on canvas
                         // Get a reference to the canvas element
                         const canvas = document.getElementById('myCanvas');
@@ -95,32 +131,33 @@
                         // Get the 2D rendering context from the canvas
                         const ctx = canvas.getContext('2d');
 
-                        // Create a new Image object
-                        const image = new Image();
+                        // Load the image using the loadImage function
+                        console.log("loading image",data["image"])
+                        loadImage(data['image'])
+                            .then((image) => {
+                                // Draw the image on the canvas using the drawImage method
+                                ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-                        // Set the source of the Image object to the URL
-                        image.src = data['image'];
-
-                        // Add an event listener for the 'load' event on the Image object
-                        image.addEventListener('load', () => {
-                            // Draw the image on the canvas using the drawImage method
-                            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-                            //then keep going
-                            playMovie(movieId)
-                        });
+                                // Call playMovie again
+                                isWaitingForResponse = false;
+                                playMovie(movieId,count+1);
+                            })
+                            .catch((error) => {
+                                console.error(error);
+                            });
 
                     }
 
-                    if ('caption' in data) {
+                    else if ('caption' in data) {
                         $('#caption').text(data['caption']);
 
                         setTimeout(function () {
-                            playMovie(movieId);
+                            isWaitingForResponse = false;
+                            playMovie(movieId,count+1);
                         }, data['duration'] * 1000);
                     }
 
-                    if ('dialogue' in data) {
+                    else if ('dialogue' in data) {
                         var audio = new Audio(data['speech']);
                         audio.play();
                         let caption = data['name'] + ": " + data['dialogue']
@@ -128,12 +165,13 @@
                         $('#caption').text(caption);
 
                         setTimeout(function () {
-                            playMovie(movieId);
+                            isWaitingForResponse = false;
+                            playMovie(movieId,count+1);
                         }, data['duration'] * 1000);
 
                     }
 
-                    if ('music' in data) {
+                    else if ('music' in data) {
 
                         var audio = new Audio(data['music']);
                         audio.loop = true;
@@ -144,26 +182,31 @@
                         }
 
                         backgroundMusic = audio
-
-                        playMovie(movieId);
+                        isWaitingForResponse = false;
+                        playMovie(movieId,count+1);
 
                     }
 
-                    if ('done' in data) {
+                    else if ('done' in data) {
 
                         if (backgroundMusic) {
                             backgroundMusic.pause();
                         }
 
+                        isWaitingForResponse = false;
+
                         if ($('#autoplay').is(':checked')) {
                             doAutoplay()
                         }
+                    }else{
+                        console.log("this should never happen!")
                     }
 
 
                 },
                 error: function (error) {
                     console.error(error);
+                    isWaitingForResponse = false;
                 }
             });
         }
@@ -229,7 +272,7 @@
             updateCaptionWithMovieTitle();
             // Play the movie
             const movieId = $('#movie-result-field').val();
-            playMovie(movieId);
+            playMovie(movieId,-1);
         }
 
 
@@ -253,6 +296,8 @@
 
             $('#movie-form').submit(function (event) {
                 submitForm(event, 'movie-form', '/create_movie', 'movie-result', 'movie-result-field');
+                $("#whichChapter").val(1)
+                $("#whichScene").val(1)
             });
 
             $('#playMovie').click(function () {
@@ -265,7 +310,10 @@
 
                 //const movieId = "your_movie_id"; // Replace with the actual movie ID
                 const movieId = $('#movie-result-field').val();
-                playMovie(movieId);
+                const whichChapter = $('#whichChapter').val();
+                const whichScene = $('#whichScene').val();
+                let count=-1
+                playMovie(movieId, count);
             });
 
             $('#stopMovie').click(function () {
@@ -450,6 +498,16 @@
     <div id="hideForms">
 
         <h2>Step 1: Create Summary</h2>
+
+        Hint: you can put suggestions for the generator here.<br>
+        <pre>
+novel suggestion:
+a story about bees
+prompt suffix:
+this text is added to the end of every image prompt
+character type:
+zombie
+        </pre>
         <form id="summary-form">
             <label for="storyObjects">Story Objects:</label>
             <br>
@@ -519,7 +577,9 @@
             <button type="submit">Create Movie</button>
         </form>
         <pre id="movie-result" style="display:none"></pre>
-        <input type="text" id="movie-result-field" cols="100"></input>
+        <input type="text" id="movie-result-field" style="width: 60ch;"></input>
+        <input type="text" id="whichChapter" style="width: 3ch;" value="1"></input>
+        <input type="text" id="whichScene" style="width: 3ch;" value="1"></input>
 
     </div>
 

@@ -8,6 +8,7 @@ import animeCreator
 from animeCreator import AnimeBuilder, getFilename
 import uuid
 from flask_ngrok2 import run_with_ngrok
+import dataset
 
 app = Flask(__name__)
 
@@ -80,18 +81,27 @@ def create_movie():
         story_objects, novel_summary, characters, chapters, all_scenes, num_chapters, num_scenes,
         aggressive_merging=aggressive_merging,
         portrait_size=portrait_size)
-    movies[movie_id] = MovieGeneratorWrapper(movie_generator)
+    movies[movie_id] = MovieGeneratorWrapper(movie_generator,movie_id)
 
     # return jsonify({"movie_id": movie_id})
     return jsonify(movie_id)
 
+import queue
 
 class MovieGeneratorWrapper:
-    def __init__(self, generator):
+    def __init__(self, generator, movie_id):
         self.generator = generator
-        self._next_element_future = None
+        self.movie_id = movie_id
+        self.current_count = 0
+        self.available_count = 0
+        self.queue_size = 5
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        
+        self._queue = queue.Queue(self.queue_size)
         self._fetch_next_element()
+
+        # Create a table for movie elements
+        self.movie_elements_table = db['movie_elements']
 
     def _get_next_element(self):
         try:
@@ -100,18 +110,45 @@ class MovieGeneratorWrapper:
                 fName = getFilename(savePath, "png")
                 element["image"].save(fName)
                 element["image"] = fName
+
+            # Increment the available count
+            self.available_count += 1
+
+            # Add movie_id and count to the element
+            element["movie_id"] = self.movie_id
+            element["count"] = self.available_count
+
+            # Insert the element as a new record in the database
+            self.movie_elements_table.insert(element)
+
             return element
         except StopIteration:
             return None
-
+        
     def _fetch_next_element(self):
-        self._next_element_future = self._executor.submit(
-            self._get_next_element)
+        self._executor.submit(self._fetch_and_enqueue_next_element)
 
-    def get_next_element(self):
-        current_element = self._next_element_future.result()
-        if current_element is not None:
+    def _fetch_and_enqueue_next_element(self):
+        while self.available_count - self.current_count < self.queue_size:
+            element = self._get_next_element()
+            if element is None:
+                break
+            self._queue.put(element)
+
+    def get_next_element(self, count=None):
+        if count is not None:
+            self.current_count = count
+
+        self.current_count += 1
+        current_element = self.movie_elements_table.find_one(movie_id=self.movie_id, count=self.current_count)
+        if current_element is None:
+            current_element = self._queue.get()
+
+        if self.available_count - self.current_count < self.queue_size:
             self._fetch_next_element()
+
+        current_element = {k: v for k, v in current_element.items() if v is not None}
+
         return current_element
 
 
@@ -121,8 +158,14 @@ def get_next_element(movie_id):
 
     if movie_generator is None:
         return jsonify({"error": "Movie not found"}), 404
+    
 
-    element = movie_generator.get_next_element()
+    count = request.args.get('count', None)
+    if count is not None:
+        count = int(count)
+        print("count",count)
+
+    element = movie_generator.get_next_element(count)
     if element is None:
         return jsonify({"done": "No more elements"}), 200
 
@@ -152,6 +195,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--ntrials', type=int, default=5,
                         help='Number of trials (default: 5)')
+    
+    parser.add_argument('--numInferenceSteps', type=int, default=15,
+                        help='Number of inference steps (default: 15)')
 
     parser.add_argument('--disable-aggressive-merging',
                         action='store_true', help='Disable aggressive merging')
@@ -176,7 +222,12 @@ if __name__ == '__main__':
     else:
         portrait_size = 128
 
-    animeBuilder = AnimeBuilder(num_inference_steps=15,
+
+    #database
+    db = dataset.connect('sqlite:///movie_elements.db')
+
+
+    animeBuilder = AnimeBuilder(num_inference_steps=args.numInferenceSteps,
                                 textModel="GPT3",
                                 diffusionModel=args.modelName,
                                 doImg2Img=args.img2img,
@@ -195,4 +246,6 @@ if __name__ == '__main__':
         run_with_ngrok(app, auth_token=os.environ["NGROK_TOKEN"])
         app.run()
     else:
-        app.run(debug=True)
+        app.run(debug=True, use_reloader=False)
+
+        #app.run()

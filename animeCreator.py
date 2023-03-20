@@ -1,48 +1,53 @@
-import os
-import openai
-
-
-import re
-from transformers import pipeline
-
-from transformers import AutoTokenizer, AutoModelForCausalLM
-
-import gc
-import torch
-import random
-from PIL import Image
-import urllib
-from pydub import AudioSegment
-from io import BytesIO
-import numpy as np
-# from IPython.display import Audio, display
-from ipywidgets import Audio  # no good, doesn't stop when clear display
-
-import ipywidgets as widgets
-from torch import autocast
-import time
-from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler, StableDiffusionImg2ImgPipeline, UniPCMultistepScheduler, DiffusionPipeline
-from diffusers.models import AutoencoderKL
-
-
-from fairseq.checkpoint_utils import load_model_ensemble_and_task_from_hf_hub
-from fairseq.models.text_to_speech.hub_interface import TTSHubInterface
-import IPython.display as ipd
-
-from mubert import generate_track_by_prompt
-from templates import templates
-from worldObject import WorldObject, ListObject
-
-import riffusion
-from riffusion import get_music
-
-import logging
-import uuid
-
+from exampleScenes import exampleScenesPrompt, exampleScenesResult
 import datetime
 import uuid
+import logging
+from riffusion import get_music
+import riffusion
+from worldObject import WorldObject, ListObject
+from templates import templates
+from mubert import generate_track_by_prompt
+import IPython.display as ipd
+from fairseq.models.text_to_speech.hub_interface import TTSHubInterface
+from fairseq.checkpoint_utils import load_model_ensemble_and_task_from_hf_hub
+from diffusers.models import AutoencoderKL
+from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler, StableDiffusionImg2ImgPipeline, UniPCMultistepScheduler, DiffusionPipeline
+import time
+from torch import autocast
+import ipywidgets as widgets
+from ipywidgets import Audio  # no good, doesn't stop when clear display
+import numpy as np
+from io import BytesIO
+from pydub import AudioSegment
+import urllib
+from PIL import Image
+import random
+import torch
+import gc
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import pipeline
+import re
+import os
+import openai
+from tenacity import retry, wait_exponential, wait_combine, stop_after_attempt, after_log
 
-from exampleScenes import exampleScenesPrompt,exampleScenesResult
+logger = logging.getLogger(__name__)
+
+
+def custom_exponential_wait(retry_state):
+    base_wait = 4
+    exponent = 1.2
+    return base_wait * (exponent ** retry_state.attempt_number)
+
+
+def custom_wait_gen():
+    attempt = 0
+    while True:
+        yield custom_exponential_wait(attempt)
+        attempt += 1
+
+
+# from IPython.display import Audio, display
 
 
 def getFilename(path, extension):
@@ -840,9 +845,6 @@ class AnimeBuilder:
                     break
 
         return output, didEnhance
-    
-    
-
 
     def transcriptToAnime(
         self,
@@ -947,13 +949,13 @@ class AnimeBuilder:
             yield {"image": portrait}
             yield {"caption": "new character: %s" % description, "duration": 1}
 
-        lastPrompt="an empty stage"
-        t=0
+        lastPrompt = "an empty stage"
+        t = 0
         settingImage = self.doGen(
             "an empty stage", num_inference_steps=self.num_inference_steps)
 
         for line in transcript.split("\n"):
-            t+=1
+            t += 1
 
             if len(line.split(":")) != 2:
                 print("this should never happen!", line, transcript)
@@ -962,26 +964,24 @@ class AnimeBuilder:
             tag = line.split(":")[0].strip().lower()
             description = line.split(":")[1].strip().lower()
 
-            if imageFrequency is not None and t>imageFrequency and tag not in ["setting","action"]:
-                t=0
-                img=self.doGen(
+            if imageFrequency is not None and t > imageFrequency and tag not in ["setting", "action"]:
+                logging.info("creating extra image %s", tag)
+                t = 0
+                img = self.doGen(
                     lastPrompt, num_inference_steps=self.num_inference_steps)
-                #yield {"image": img}
+                # yield {"image": img}
                 settingImage = img
-
-
-
 
             if tag == "setting":
 
                 prompt = description+promptSuffix
 
                 prompt, didEnhance = self.enhancePrompt(prompt, _characters)
-                lastPrompt=prompt
+                lastPrompt = prompt
                 if didEnhance:
                     print("enhanced prompt", prompt)
 
-                t=0
+                t = 0
                 settingImage = self.doGen(
                     prompt, num_inference_steps=self.num_inference_steps)
 
@@ -1005,7 +1005,7 @@ class AnimeBuilder:
             elif tag == "action":
 
                 prompt = description+promptSuffix
-                lastPrompt=prompt
+                lastPrompt = prompt
                 prompt, didEnhance = self.enhancePrompt(prompt, _characters)
                 if didEnhance:
                     print("enhanced prompt", prompt)
@@ -1014,7 +1014,7 @@ class AnimeBuilder:
                     prompt, num_inference_steps=self.num_inference_steps)
 
                 # for now this seems better
-                t=0
+                t = 0
                 settingImage = actionImage
 
                 yield {"image": actionImage}
@@ -1053,11 +1053,10 @@ class AnimeBuilder:
                        "duration": duration+1,
                        "name": name,
                        "dialogue": dialogue}
-                
-            
 
         return
 
+    @retry(wait=wait_combine(custom_exponential_wait, custom_wait_gen), stop=stop_after_attempt(5), after=after_log(logger, logging.INFO))
     def createScreenplay(self, sceneDescription, previousMessages=[]):
 
         systemprompt = """
@@ -1106,7 +1105,8 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             previousMessages +
             [
                 {"role": "user", "content": sceneDescription},
-            ]
+            ],
+            timeout=10
         )
 
         result = ''
@@ -1178,7 +1178,13 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
             # fix some bad tags
             if tag == "sfx":
-                line = "sound effect: "+description
+                category = self.classify_text_openai(description)
+                line = category+": "+description
+
+            # fix some bad tags
+            if tag == "sound effect":
+                category = self.classify_text_openai(description)
+                line = category+": "+description
 
             if "dialogue" in tag:
                 category = self.classify_text_openai(description)
@@ -1239,12 +1245,13 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             if verbose:
                 print(s, score)
 
-            logging.info("screenplay:\n %s\n score %d/%d=%f", s, score, len(v),score/len(v))
+            logging.info("screenplay:\n %s\n score %d/%d=%f",
+                         s, score, len(v), score/len(v))
 
             if len(v) > 8 and score == 0:
                 return "\n".join(v)
             if len(v) > 8 and score/len(v) < bestScore:
-                logging.info("new best score! %f",score/len(v))
+                logging.info("new best score! %f", score/len(v))
                 bestScore = score/len(v)
                 bestScreenplay = v
                 _bestScreenplay = s
@@ -1280,10 +1287,10 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         print(sceneSummary)
 
         if additionalScenePrompt:
-            sceneSummary+=additionalScenePrompt
+            sceneSummary += additionalScenePrompt
 
         if conclusionPrompt is None:
-            conclusionPrompt=" This is the last scene, so make sure to give the story a satisfying conclusion."
+            conclusionPrompt = " This is the last scene, so make sure to give the story a satisfying conclusion."
 
         if whichChapter == num_chapters and whichScene == num_scenes:
             sceneSummary += conclusionPrompt
@@ -1466,12 +1473,13 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                         chapterTitle,
                         chapterSummary,
                         whichChapter,
-                        previousMessages=None, 
-                        k=5
+                        previousMessages=None,
+                        k=5,
+                        numChapters=12
                         ):
-        emptyScenesTemplate="\n".join(["""scene {i} summary:
+        emptyScenesTemplate = "\n".join(["""scene {i} summary:
 <scene {i} summary>""".format(i=i)
-                                       for i in range(1,k+1)
+            for i in range(1, k+1)
         ])
 
         systemPrompt = """
@@ -1502,27 +1510,29 @@ the system NEVER uses ""s ()'s {{}}'s []'s or nonstandard punctuation
 The number of scenes produced is {numScenes}, NEVER MORE and NEVER LESS
 
 Remember, the scenes should focus only on the described chapter, not what happens before or after
-""".format(numScenes=k,emptyScenesTemplate=emptyScenesTemplate)
+""".format(numScenes=k, emptyScenesTemplate=emptyScenesTemplate)
 
         if previousMessages is None:
             messages = [
                 {"role": "system", "content": systemPrompt},
-                {"role":"user","content":exampleScenesPrompt},
-                {"role":"assistant","content":exampleScenesResult[k]},
+                {"role": "user", "content": exampleScenesPrompt},
+                {"role": "assistant", "content": exampleScenesResult[k]},
                 {"role": "user", "content": str(characters)},
                 {"role": "user", "content": str(novelSummary)},
                 # {"role": "user", "content": str(chapters)},
-                {"role": "user", "content": "generate scenes for chapter %d of this novel" %
-                    whichChapter},
+                {"role": "user", "content": "generate scenes for chapter %d of this novel which has a total of %d chapters" %
+                    (whichChapter, numChapters)},
                 {"role": "user", "content": str(chapterTitle)},
                 {"role": "user", "content": str(chapterSummary)},
+                {"role": "user", "content": emptyScenesTemplate},
             ]
         else:
             messages = previousMessages+[
-                {"role": "user", "content": "generate scenes for chapter %d of this novel" %
-                    whichChapter},
+                {"role": "user", "content": "generate scenes for chapter %d of this novel which has a total of %d chapters" %
+                    (whichChapter, numChapters)},
                 {"role": "user", "content": str(chapterTitle)},
                 {"role": "user", "content": str(chapterSummary)},
+                {"role": "user", "content": emptyScenesTemplate},
             ]
 
         response = openai.ChatCompletion.create(
@@ -1534,7 +1544,7 @@ Remember, the scenes should focus only on the described chapter, not what happen
         for choice in response.choices:
             result += choice.message.content
 
-        outputMessages = messages+[{"assistant": result}]
+        outputMessages = messages+[{"role": "assistant", "content": result}]
 
         return result, outputMessages
 
@@ -1561,10 +1571,10 @@ Remember, the scenes should focus only on the described chapter, not what happen
             customTemplate=customTemplate)
 
         score = 0
-        k=1
+        k = 1
         while w.has("scene %d summary" % k):
             score += 1
-            k+=1
+            k += 1
 
         return w, score
 
@@ -1579,6 +1589,7 @@ Remember, the scenes should focus only on the described chapter, not what happen
         k=5,
         nTrials=3,
         previousMessages=None,
+        numChapters=12,
         verbose=False
     ):
         bestNovel = None
@@ -1592,6 +1603,7 @@ Remember, the scenes should focus only on the described chapter, not what happen
                                                chapterSummary,
                                                whichChapter,
                                                previousMessages=previousMessages,
+                                               numChapters=numChapters,
                                                k=k
                                                )
 
@@ -1602,14 +1614,49 @@ Remember, the scenes should focus only on the described chapter, not what happen
             if foundScenes == k:
                 return w, messages
             if foundScenes > k:
-                score=k-foundScenes
-                print("too many scenes!",score)
-                if score>bestScore:
+                score = k-foundScenes
+                print("too many scenes!", score)
+                if score > bestScore:
                     bestNovel = w
                     bestScore = score
                     bestMessages = messages
         print("failed to generate novel", foundScenes)
-        return bestNovel, bestMessages
+
+        emptyScenesTemplate = "\n".join(["""scene {i} summary:
+<scene {i} summary>""".format(i=i)
+            for i in range(1, k+1)
+        ])
+
+        fallbackTemplate = chapterSummary+"\n\n"+emptyScenesTemplate
+
+        print("fallback template", fallbackTemplate)
+
+        WorldObject(
+            self.templates,
+            self.textGenerator,
+            "chapterToScenes",
+            customTemplate=fallbackTemplate
+        )
+
+        messages = previousMessages+[
+            {"role": "user", "content": "generate scenes for chapter %d of this novel" %
+             whichChapter},
+            {"role": "user", "content": str(chapterTitle)},
+            {"role": "user", "content": str(chapterSummary)},
+            {"role": "user", "content": emptyScenesTemplate},
+        ]
+
+        chapter_scenes = str(w).split("\n", 1)[1]
+
+        print("generated fallback scenes", chapter_scenes)
+
+        output_messages = messages+[
+            {"role": "assistant", "content": chapter_scenes}
+        ]
+
+        return chapter_scenes, output_messages
+
+        # return bestNovel, bestMessages
 
     def chaptersToScenes(
         self,
@@ -1631,8 +1678,8 @@ Remember, the scenes should focus only on the described chapter, not what happen
             chapterSummary = chapters.getProperty(
                 "chapter %d summary" % (whichChapter))
 
-            if previousMessages is not None and len(previousMessages) > 17:
-                previousMessages = previousMessages[:5]+previousMessages[-12:]
+            if previousMessages is not None and len(previousMessages) > 20:
+                previousMessages = previousMessages[:5]+previousMessages[-15:]
 
             c, messages = self.getValidScenes(
                 novelSummary,
@@ -1640,9 +1687,11 @@ Remember, the scenes should focus only on the described chapter, not what happen
                 chapters,
                 chapterTitle,
                 chapterSummary,
-                whichChapter=1,
+                whichChapter=whichChapter,
                 k=numScenes,
-                nTrials=nTrials
+                nTrials=nTrials,
+                previousMessages=previousMessages,
+                numChapters=numChapters
             )
 
             print("\n\nchapter", whichChapter, chapterTitle, chapterSummary)
@@ -1651,6 +1700,8 @@ Remember, the scenes should focus only on the described chapter, not what happen
             output += [c]
 
             previousMessages = messages
+
+            # print("What??", len(previousMessages), previousMessages)
 
         return output
 
@@ -1681,16 +1732,25 @@ Remember, the scenes should focus only on the described chapter, not what happen
 
         '''
 
-        if storyObjects.has("novelSuggestion"):
-            novelSuggestion=storyObjects.getProperty("novelSuggestion")
-            logging.info("novel suggestion: %s",novelSuggestion)
+        if storyObjects.has("novel suggestion"):
+            novelSuggestion = storyObjects.getProperty("novel suggestion")
+            logging.info("novel suggestion: %s", novelSuggestion)
         else:
-            novelSuggestion=None
+            novelSuggestion = None
 
-        
+        if storyObjects.has("character type"):
+            if novelSuggestion:
+                novelSuggestion += "\ncharacter type = %s \n" % storyObjects.getProperty(
+                    "character type")
+            else:
+                novelSuggestion = "\ncharacter type = %s \n" % storyObjects.getProperty(
+                    "character type")
 
-        novel_summary=self.chatGPTFillTemplate(self.templates["novelSummary"],"novelSummary",extraInfo=novelSuggestion)
-        
+        logging.info("here %s", novelSuggestion)
+
+        novel_summary = self.chatGPTFillTemplate(
+            self.templates["novelSummary"], "novelSummary", extraInfo=novelSuggestion)
+
         return novel_summary
 
     def create_characters(self, story_objects, novel_summary):
@@ -1709,7 +1769,6 @@ Remember, the scenes should focus only on the described chapter, not what happen
             customTemplate=novel_summary
         )
 
-        
         characters = WorldObject(
             self.templates,
             self.textGenerator,
@@ -1727,7 +1786,6 @@ Remember, the scenes should focus only on the described chapter, not what happen
 
         return novel_characters
         """
-
 
     def create_chapters(self, story_objects, novel_summary, _characters, num_chapters, nTrials=3):
 
@@ -1795,12 +1853,17 @@ Remember, the scenes should focus only on the described chapter, not what happen
 
         return "\n===\n".join([str(x).split('\n', 1)[1] for x in scenes])
 
-    def generate_movie_data(self, story_objects, novel_summary, _characters, _chapters, scenes, num_chapters, num_scenes,aggressive_merging=True,
-                            portrait_size=128):
+    def generate_movie_data(self, story_objects, novel_summary, _characters, _chapters, scenes, num_chapters, num_scenes, aggressive_merging=True,
+                            portrait_size=128,startChapter=None,startScene=None):
         # Process the inputs and generate the movie data
         # This is where you would include your existing code to generate the movie elements
         # For demonstration purposes, we'll just yield some dummy elements
 
+        if startChapter is None:
+            startChapter=1
+        if startScene is None:
+            startScene=1
+        
         storyObjects = WorldObject(
             self.templates,
             self.textGenerator,
@@ -1912,11 +1975,18 @@ Remember, the scenes should focus only on the described chapter, not what happen
         savedGenders = {}
 
         previousScene = None
+        previousMessages = None
 
         for whichChapter in range(1, num_chapters+1):
             for whichScene in range(1, num_scenes+1):
 
-                yield {"debug": "chapter %d scene %d" % (whichChapter, whichScene)}
+                #skip to the desired scene
+                if whichChapter<startChapter or (whichChapter==startChapter and whichScene<startScene):
+                    continue
+
+                yield {"debug": "new scene",
+                       "chapter": whichChapter,
+                       "scene": whichScene}
 
                 if previousScene is not None:
                     previousMessages = previousScene[1]
@@ -1960,11 +2030,24 @@ Remember, the scenes should focus only on the described chapter, not what happen
 
                 s = thisScene[0]
 
+                if previousMessages:
+                    print("what??", len(previousMessages))
+
+                yield {"debug": "transcript",
+                       "whichChapter": whichChapter,
+                       "whichScene": whichScene,
+                       "transcript": s,
+                       }
+
                 if novelSummary.has("characterType"):
                     promptSuffix = ", " + \
                         novelSummary.getProperty("characterType")+self.suffix
                 else:
                     promptSuffix = self.suffix
+
+                if storyObjects.has("prompt suffix"):
+                    promptSuffix = ", " + \
+                        storyObjects.getProperty("prompt suffix")+self.suffix
 
                 anime = self.transcriptToAnime(
                     s,
@@ -1984,9 +2067,7 @@ Remember, the scenes should focus only on the described chapter, not what happen
         yield {"caption": "THE END",
                "duration": 1}
 
-
-
-    def validate(self,result, keys, templateName):
+    def validate(self, result, keys, templateName):
         # Remove blank lines from the result
         result = '\n'.join(line for line in result.split('\n') if line.strip())
 
@@ -2005,11 +2086,9 @@ Remember, the scenes should focus only on the described chapter, not what happen
                 return False
         return True
 
-    
+    def chatGPTFillTemplate(animeBuilder, template, templateName, exampleTemplate=None, extraInfo=None, nTrials=3):
 
-    def chatGPTFillTemplate(animeBuilder,template,templateName,exampleTemplate=None,extraInfo=None,nTrials=3):
-
-        templateSystemPrompt="""
+        templateSystemPrompt = """
 TemplateEngine is an advanced software agent that takes a template and fills it with appropriate text
 
 The template looks like:
@@ -2045,51 +2124,54 @@ the system NEVER complains about missing keys, it just happily ignores them
 
         pattern = r'\{([^:{}]+)(:[^:]*:.*?)?\}'
         t = re.sub(pattern, r'<\1>', template)
-        tt=[x.strip() for x in t.split("\n\n") if len(x.strip())>0]
+        tt = [x.strip() for x in t.split("\n\n") if len(x.strip()) > 0]
         if exampleTemplate is None:
-            exampleTemplate=tt[-1]
-        formattedSystemPrompt=templateSystemPrompt.format(exampleTemplate=exampleTemplate)
-        
-        logging.info("system prompt:\n%s",formattedSystemPrompt)
-        
-        messages=[
-            {"role":"system","content":formattedSystemPrompt}
+            exampleTemplate = tt[-1]
+        formattedSystemPrompt = templateSystemPrompt.format(
+            exampleTemplate=exampleTemplate)
+
+        # logging.info("system prompt:\n%s",formattedSystemPrompt)
+        if extraInfo is not None:
+            logging.info("extra info:\n%s", extraInfo)
+
+        messages = [
+            {"role": "system", "content": formattedSystemPrompt}
         ]
         for example in tt[:-1]:
-            messages+=[{"role":"user","content":exampleTemplate},
-                    {"role":"assistant","content":example}
-                    ]
+            messages += [{"role": "user", "content": exampleTemplate},
+                         {"role": "assistant", "content": example}
+                         ]
         if extraInfo:
-            messages+=[{"role":"user","content":extraInfo}]        
-        messages+=[{"role":"user","content":tt[-1]}]
-        keys=[line.split(":")[0] for line in tt[-1].split("\n") if ":" in line]
-        
+            messages += [{"role": "user", "content": extraInfo}]
+        messages += [{"role": "user", "content": tt[-1]}]
+        keys = [line.split(":")[0]
+                for line in tt[-1].split("\n") if ":" in line]
+
         for i in range(nTrials):
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                        messages=messages
-                    )
-            
-            result=response.choices[0].message.content
-            logging.info("RESPONSE %d %s",i,result)
-            if animeBuilder.validate(result,keys,"novelSummary"):
+                messages=messages
+            )
+
+            result = response.choices[0].message.content
+            logging.info("RESPONSE %d %s", i, result)
+            if animeBuilder.validate(result, keys, "novelSummary"):
                 return result
         print("this should never happen!")
         return random.choice(tt[:-1])
 
+    def chatGPTFillTemplate2(animeBuilder, template, templateName, extraInfo=None, objects=None):
 
-    def chatGPTFillTemplate2(animeBuilder,template,templateName,extraInfo=None,objects=None):
-        
         pattern = r'\{([^:{}]+)(:[^:]*:.*?)?\}'
         t = re.sub(pattern, r'<\1>', template)
-        tt=[x.strip() for x in t.split("\n\n") if len(x.strip())>0]
-        
-        exampleTemplate=tt[-1]
-        
-        _extraInfo=[]
-        
+        tt = [x.strip() for x in t.split("\n\n") if len(x.strip()) > 0]
+
+        exampleTemplate = tt[-1]
+
+        _extraInfo = []
+
         if objects is not None:
-            #first fill in all of the values from objects    
+            # first fill in all of the values from objects
             def get_object_property(object_name, property_name):
                 obj = objects[object_name]
 
@@ -2097,21 +2179,20 @@ the system NEVER complains about missing keys, it just happily ignores them
                     return obj.getProperty(property_name)
                 else:
                     return f"{{{object_name}.{property_name}}}"
-                
+
             def createWorldObject(property_type, overrides=None):
                 if overrides is not None:
-                    #TODO:fixme
-                    objects={}
+                    # TODO:fixme
+                    objects = {}
                 else:
-                    objects={}
-                w=WorldObject(
+                    objects = {}
+                w = WorldObject(
                     animeBuilder.templates,
                     animeBuilder.textGenerator,
                     property_type,
                     objects=objects)
-                
+
                 return str(w)
-            
 
             def replacement_function(match_obj):
                 matched_text = match_obj.group(1)
@@ -2119,19 +2200,20 @@ the system NEVER complains about missing keys, it just happily ignores them
 
                 if len(match_split) >= 2:
                     property_name, property_type = match_split[:2]
-                    overrides = match_split[2] if len(match_split) == 3 else None
+                    overrides = match_split[2] if len(
+                        match_split) == 3 else None
 
                     if property_type != "TEXT":
-                        s=createWorldObject(property_type, overrides)
-                        
-                        line=f"{{{matched_text}}}"+"="+s
+                        s = createWorldObject(property_type, overrides)
+
+                        line = f"{{{matched_text}}}"+"="+s
                         pattern = r'\{([^:{}]+)(:[^:]*:.*?)?\}'
                         line = re.sub(pattern, r'<\1>', line)
 
-                        #_extraInfo.append(f"{{{matched_text}}}"+"="+s)
+                        # _extraInfo.append(f"{{{matched_text}}}"+"="+s)
                         _extraInfo.append(line)
 
-                        #return f"{{{matched_text}}}"
+                        # return f"{{{matched_text}}}"
                         return s
                     else:
                         return f"{{{matched_text}}}"
@@ -2143,39 +2225,36 @@ the system NEVER complains about missing keys, it just happily ignores them
                     else:
                         return f"{{{matched_text}}}"
 
-
             pattern = r'\{([^}]+)\}'
             augmentedTemplate = re.sub(pattern, replacement_function, template)
         else:
-            augmentedTemplate=template
-            
+            augmentedTemplate = template
+
         if extraInfo is None:
-            extraInfo=""
-            
-        #logging.info("_extraInfo %s",_extraInfo)
-            
+            extraInfo = ""
+
+        # logging.info("_extraInfo %s",_extraInfo)
+
         for line in _extraInfo:
-            extraInfo+=line+"\n"
+            extraInfo += line+"\n"
 
         extraInfo_lines = []
         filteredTemplate_lines = []
 
         for line in augmentedTemplate.split('\n'):
             if line.startswith('>'):
-                extraInfo_lines.append(line[1:].strip())  # Remove '>' and add line to extraInfo_lines
+                # Remove '>' and add line to extraInfo_lines
+                extraInfo_lines.append(line[1:].strip())
             else:
                 filteredTemplate_lines.append(line)
 
         extraInfo = '\n'.join(extraInfo_lines) + '\n' + extraInfo
         filteredTemplate = '\n'.join(filteredTemplate_lines)
-        
-        if len(extraInfo)==0:
-            extraInfo=None
-            
-            
-        print("about to die\n==\n",extraInfo,"\n==\n",filteredTemplate,"\n==")
 
-        return animeBuilder.chatGPTFillTemplate(filteredTemplate,templateName,exampleTemplate=exampleTemplate,extraInfo=extraInfo,nTrials=3)
-        
-            
-        
+        if len(extraInfo) == 0:
+            extraInfo = None
+
+        print("about to die\n==\n", extraInfo,
+              "\n==\n", filteredTemplate, "\n==")
+
+        return animeBuilder.chatGPTFillTemplate(filteredTemplate, templateName, exampleTemplate=exampleTemplate, extraInfo=extraInfo, nTrials=3)
