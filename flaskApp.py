@@ -111,12 +111,12 @@ class MovieGeneratorWrapper:
                 element["image"].save(fName)
                 element["image"] = fName
 
-            # Increment the available count
-            self.available_count += 1
-
             # Add movie_id and count to the element
             element["movie_id"] = self.movie_id
             element["count"] = self.available_count
+
+            # Increment the available count
+            self.available_count += 1
 
             # Insert the element as a new record in the database
             self.movie_elements_table.insert(element)
@@ -132,6 +132,7 @@ class MovieGeneratorWrapper:
         while self.available_count - self.current_count < self.queue_size:
             element = self._get_next_element()
             if element is None:
+                self._queue.put(None)
                 break
             self._queue.put(element)
 
@@ -139,15 +140,41 @@ class MovieGeneratorWrapper:
         if count is not None:
             self.current_count = count
 
-        self.current_count += 1
         current_element = self.movie_elements_table.find_one(movie_id=self.movie_id, count=self.current_count)
         if current_element is None:
             current_element = self._queue.get()
 
-        if self.available_count - self.current_count < self.queue_size:
-            self._fetch_next_element()
+        if current_element is not None:
+            if self.available_count - self.current_count < self.queue_size:
+                self._fetch_next_element()
+
+            current_element = {k: v for k, v in current_element.items() if v is not None}
+
+        self.current_count += 1
+
+        return current_element
+    
+
+# DatabaseMovieGenerator class
+class DatabaseMovieGenerator:
+    def __init__(self, movie_id):
+        self.movie_id = movie_id
+        self.movie_elements_table = db['movie_elements']
+        self.current_count = 0
+
+    def get_next_element(self, count=None):
+        if count is not None:
+            self.current_count = count
+
+        
+        current_element = self.movie_elements_table.find_one(movie_id=self.movie_id, count=self.current_count)
+        
+        if current_element is None:
+            return None
 
         current_element = {k: v for k, v in current_element.items() if v is not None}
+
+        self.current_count += 1
 
         return current_element
 
@@ -157,8 +184,14 @@ def get_next_element(movie_id):
     movie_generator = movies.get(movie_id)
 
     if movie_generator is None:
-        return jsonify({"error": "Movie not found"}), 404
-    
+        # Check if there's at least one element in the movie_elements_table with movie_id
+        element_count = db['movie_elements'].count({"movie_id": movie_id})
+        
+        if element_count == 0:
+            return jsonify({"error": "Movie not found"}), 404
+
+        # Create an instance of the DatabaseMovieGenerator class and use it as the movie_generator
+        movie_generator = DatabaseMovieGenerator(movie_id, db['movie_elements'])
 
     count = request.args.get('count', None)
     if count is not None:
@@ -171,6 +204,33 @@ def get_next_element(movie_id):
 
     return jsonify(element)
 
+
+@app.route('/get_all_movies', methods=['GET'])
+def get_all_movies():
+    # Find all movie elements with "debug": "new movie"
+    movie_elements = list(db['movie_elements'].find(debug="new movie"))
+
+    # Extract the movie information (title, summary, etc.) from the movie elements
+    movies_list = []
+    for element in movie_elements:
+        movie_info = {
+            "movie_id": element["movie_id"],
+            "title": element["title"],
+            "summary": element["summary"],
+        }
+        movies_list.append(movie_info)
+
+    return jsonify(movies_list)
+
+
+@app.route('/movies')
+def movie_list():
+    return render_template('movie_list.html')
+
+@app.route('/movie/<string:movie_id>', methods=['GET'])
+def movie_page(movie_id):
+    # Replace 'movie_template.html' with the name of your movie template file
+    return render_template('movie_template.html', movie_id=movie_id)
 
 openai.api_key = os.environ['OPENAI_API_KEY']
 

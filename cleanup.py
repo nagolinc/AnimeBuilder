@@ -3,6 +3,9 @@
 import os
 import glob
 
+#remove database
+os.remove('movie_elements.db')
+
 pngs=glob.glob("./static/samples/*.png")
 for png in pngs:
     os.remove(png)

@@ -99,8 +99,6 @@ antagonist description:
     
 ""","storyObjects":"""
 
-character type:
-anime hero
 scene prompt:
 make sure to include lots of action!
 

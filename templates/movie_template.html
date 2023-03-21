@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto&display=swap" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:wght@800&display=swap" />
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@900&display=swap" rel="stylesheet">
-    <title>Anime Creator</title>
+    <title>Play Movie</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
 
@@ -77,10 +77,14 @@
 
         function loadImage(src) {
 
-            
-            console.log("loaded img",src)
+            src="../"+src
 
-            if(src==null){
+            console.log("about to die",src)
+
+
+            console.log("loaded img", src)
+
+            if (src == null) {
                 return
             }
 
@@ -94,8 +98,8 @@
 
         function playMovie(movieId, count) {
 
-            if(count==null){
-                count=-1
+            if (count == null) {
+                count = -1
             }
 
             if (playbackStopped || isWaitingForResponse) return;
@@ -121,7 +125,7 @@
                         }
                         //just keep going
                         isWaitingForResponse = false;
-                        playMovie(movieId,count+1)
+                        playMovie(movieId, count + 1)
                     }
 
                     else if ('image' in data) {
@@ -133,7 +137,7 @@
                         const ctx = canvas.getContext('2d');
 
                         // Load the image using the loadImage function
-                        console.log("loading image",data["image"])
+                        console.log("loading image", data["image"])
                         loadImage(data['image'])
                             .then((image) => {
                                 // Draw the image on the canvas using the drawImage method
@@ -141,7 +145,7 @@
 
                                 // Call playMovie again
                                 isWaitingForResponse = false;
-                                playMovie(movieId,count+1);
+                                playMovie(movieId, count + 1);
                             })
                             .catch((error) => {
                                 console.error(error);
@@ -154,12 +158,12 @@
 
                         setTimeout(function () {
                             isWaitingForResponse = false;
-                            playMovie(movieId,count+1);
+                            playMovie(movieId, count + 1);
                         }, data['duration'] * 1000);
                     }
 
                     else if ('dialogue' in data) {
-                        var audio = new Audio(data['speech']);
+                        var audio = new Audio("../"+data['speech']);
                         audio.play();
                         let caption = data['name'] + ": " + data['dialogue']
 
@@ -167,14 +171,14 @@
 
                         setTimeout(function () {
                             isWaitingForResponse = false;
-                            playMovie(movieId,count+1);
+                            playMovie(movieId, count + 1);
                         }, data['duration'] * 1000);
 
                     }
 
                     else if ('music' in data) {
 
-                        var audio = new Audio(data['music']);
+                        var audio = new Audio("../"+data['music']);
                         audio.loop = true;
                         audio.play();
 
@@ -184,7 +188,7 @@
 
                         backgroundMusic = audio
                         isWaitingForResponse = false;
-                        playMovie(movieId,count+1);
+                        playMovie(movieId, count + 1);
 
                     }
 
@@ -199,7 +203,7 @@
                         if ($('#autoplay').is(':checked')) {
                             doAutoplay()
                         }
-                    }else{
+                    } else {
                         console.log("this should never happen!")
                     }
 
@@ -273,187 +277,192 @@
             updateCaptionWithMovieTitle();
             // Play the movie
             const movieId = $('#movie-result-field').val();
-            playMovie(movieId,0);
+            playMovie(movieId, 0);
         }
 
 
 
         $(document).ready(function () {
+
+            let movie_id = "{{ movie_id }}"
+            $("#movie-result-field").val(movie_id)
+
+
             $('#summary-form').submit(function (event) {
-                submitForm(event, 'summary-form', '/create_summary', 'summary-result', 'characters-form #novelSummary');
-            });
+            submitForm(event, 'summary-form', '/create_summary', 'summary-result', 'characters-form #novelSummary');
+        });
 
-            $('#characters-form').submit(function (event) {
-                submitForm(event, 'characters-form', '/create_characters', 'characters-result', 'chapters-form #characters', updateHiddenNovelSummary);
-            });
+        $('#characters-form').submit(function (event) {
+            submitForm(event, 'characters-form', '/create_characters', 'characters-result', 'chapters-form #characters', updateHiddenNovelSummary);
+        });
 
-            $('#chapters-form').submit(function (event) {
-                submitForm(event, 'chapters-form', '/create_chapters', 'chapters-result', 'scenes-form #chapters', updateHiddenNovelSummary);
-            });
+        $('#chapters-form').submit(function (event) {
+            submitForm(event, 'chapters-form', '/create_chapters', 'chapters-result', 'scenes-form #chapters', updateHiddenNovelSummary);
+        });
 
-            $('#scenes-form').submit(function (event) {
-                submitForm(event, 'scenes-form', '/create_scenes', 'scenes-result', 'movie-form #scenes', updateHiddenNovelSummary);
-            });
+        $('#scenes-form').submit(function (event) {
+            submitForm(event, 'scenes-form', '/create_scenes', 'scenes-result', 'movie-form #scenes', updateHiddenNovelSummary);
+        });
 
-            $('#movie-form').submit(function (event) {
-                submitForm(event, 'movie-form', '/create_movie', 'movie-result', 'movie-result-field');
-                $("#whichChapter").val(1)
-                $("#whichScene").val(1)
-            });
+        $('#movie-form').submit(function (event) {
+            submitForm(event, 'movie-form', '/create_movie', 'movie-result', 'movie-result-field');
+            $("#whichChapter").val(1)
+            $("#whichScene").val(1)
+        });
 
-            $('#playMovie').click(function () {
-                //hide all of the forms
-                $('#hideForms').hide();
+        $('#playMovie').click(function () {
+            //hide all of the forms
+            $('#hideForms').hide();
 
-                playbackStopped = false
+            playbackStopped = false
 
-                updateCaptionWithMovieTitle();
+            updateCaptionWithMovieTitle();
 
-                //const movieId = "your_movie_id"; // Replace with the actual movie ID
-                const movieId = $('#movie-result-field').val();
-                const whichChapter = $('#whichChapter').val();
-                const whichScene = $('#whichScene').val();
-                let count=0
-                playMovie(movieId, count);
-            });
+            //const movieId = "your_movie_id"; // Replace with the actual movie ID
+            const movieId = $('#movie-result-field').val();
+            const whichChapter = $('#whichChapter').val();
+            const whichScene = $('#whichScene').val();
+            let count = 0
+            playMovie(movieId, count);
+        });
 
-            $('#stopMovie').click(function () {
-                //hide all of the forms
-                $('#hideForms').show();
+        $('#stopMovie').click(function () {
+            //hide all of the forms
+            //$('#hideForms').show();
 
-                playbackStopped = true
+            playbackStopped = true
 
-                if (backgroundMusic) {
-                    backgroundMusic.pause()
-                }
-            });
+            if (backgroundMusic) {
+                backgroundMusic.pause()
+            }
+        });
 
-            $('#characters-form #novelSummary').on('input', function () {
-                updateHiddenNovelSummary();
-            });
-
-            $('#chapters-form #novelSummary').on('input', function () {
-                updateHiddenNovelSummary();
-            });
-
-            $('#scenes-form #novelSummary').on('input', function () {
-                updateHiddenNovelSummary();
-            });
-
+        $('#characters-form #novelSummary').on('input', function () {
             updateHiddenNovelSummary();
+        });
 
-            let originalSize = null;
+        $('#chapters-form #novelSummary').on('input', function () {
+            updateHiddenNovelSummary();
+        });
 
-            function updateCaptionStyle() {
-                let caption = document.getElementById('caption');
-                let canvas = document.getElementById('myCanvas');
+        $('#scenes-form #novelSummary').on('input', function () {
+            updateHiddenNovelSummary();
+        });
 
-                if (document.fullscreenElement) {
-                    let minDimension = Math.min(screen.width, screen.height);
-                    caption.style.fontSize = (30 * (minDimension / 1024)) + 'px';
-                    caption.style.width = (minDimension - 256 * minDimension / 1024) + 'px';
+        updateHiddenNovelSummary();
 
-                    caption.style.position = 'fixed';
-                    caption.style.bottom = '10px';
-                    caption.style.left = (canvas.offsetLeft) + 'px';
-                } else {
-                    caption.style.fontSize = '30px';
-                    caption.style.width = 'calc(1024px - 256px)';
+        let originalSize = null;
 
-                    caption.style.position = 'absolute';
-                    caption.style.bottom = '10px';
-                    caption.style.left = '0';
-                }
+        function updateCaptionStyle() {
+            let caption = document.getElementById('caption');
+            let canvas = document.getElementById('myCanvas');
+
+            if (document.fullscreenElement) {
+                let minDimension = Math.min(screen.width, screen.height);
+                caption.style.fontSize = (30 * (minDimension / 1024)) + 'px';
+                caption.style.width = (minDimension - 256 * minDimension / 1024) + 'px';
+
+                caption.style.position = 'fixed';
+                caption.style.bottom = '10px';
+                caption.style.left = (canvas.offsetLeft) + 'px';
+            } else {
+                caption.style.fontSize = '30px';
+                caption.style.width = 'calc(1024px - 256px)';
+
+                caption.style.position = 'absolute';
+                caption.style.bottom = '10px';
+                caption.style.left = '0';
+            }
+        }
+
+        async function toggleFullscreen() {
+            let container = document.getElementsByClassName('container')[0];
+            let canvas = document.getElementById('myCanvas');
+            let ctx = canvas.getContext('2d');
+
+            // Store the current canvas content as an image
+            let tempCanvasImage = new Image();
+            tempCanvasImage.src = canvas.toDataURL();
+
+            // Toggle fullscreen mode
+            if (!document.fullscreenElement) {
+                await container.requestFullscreen();
+            } else {
+                await document.exitFullscreen();
             }
 
-            async function toggleFullscreen() {
+            if (document.fullscreenElement) {
+                let minDimension = Math.min(screen.width, screen.height);
+                canvas.width = minDimension;
+                canvas.height = minDimension;
+
+                // Center the container in fullscreen mode
+                container.style.width = '100%';
+                container.style.height = '100%';
+                container.style.display = 'flex';
+                container.style.justifyContent = 'center';
+                container.style.alignItems = 'center';
+            } else {
+                canvas.width = 1024;
+                canvas.height = 1024;
+
+                // Reset container styles when exiting fullscreen
+                container.style.width = '';
+                container.style.height = '';
+                container.style.display = '';
+                container.style.justifyContent = '';
+                container.style.alignItems = '';
+            }
+
+            if (document.fullscreenElement) {
+                let minDimension = Math.min(screen.width, screen.height);
+                canvas.width = minDimension;
+                canvas.height = minDimension;
+            } else {
+                canvas.width = 1024;
+                canvas.height = 1024;
+            }
+            // Redraw the stored image onto the resized canvas
+            ctx.drawImage(tempCanvasImage, 0, 0, canvas.width, canvas.height);
+
+            // Update caption style
+            updateCaptionStyle();
+        }
+
+        function handleFullscreenChange() {
+            let canvas = document.getElementById('myCanvas');
+            let ctx = canvas.getContext('2d');
+
+            // Store the current canvas content as an image
+            let tempCanvasImage = new Image();
+            tempCanvasImage.src = canvas.toDataURL();
+
+            if (!document.fullscreenElement) {
+                canvas.width = 1024;
+                canvas.height = 1024;
+
+                // Reset container styles when exiting fullscreen
                 let container = document.getElementsByClassName('container')[0];
-                let canvas = document.getElementById('myCanvas');
-                let ctx = canvas.getContext('2d');
+                container.style.width = '';
+                container.style.height = '';
+                container.style.display = '';
+                container.style.justifyContent = '';
+                container.style.alignItems = '';
 
-                // Store the current canvas content as an image
-                let tempCanvasImage = new Image();
-                tempCanvasImage.src = canvas.toDataURL();
-
-                // Toggle fullscreen mode
-                if (!document.fullscreenElement) {
-                    await container.requestFullscreen();
-                } else {
-                    await document.exitFullscreen();
-                }
-
-                if (document.fullscreenElement) {
-                    let minDimension = Math.min(screen.width, screen.height);
-                    canvas.width = minDimension;
-                    canvas.height = minDimension;
-
-                    // Center the container in fullscreen mode
-                    container.style.width = '100%';
-                    container.style.height = '100%';
-                    container.style.display = 'flex';
-                    container.style.justifyContent = 'center';
-                    container.style.alignItems = 'center';
-                } else {
-                    canvas.width = 1024;
-                    canvas.height = 1024;
-
-                    // Reset container styles when exiting fullscreen
-                    container.style.width = '';
-                    container.style.height = '';
-                    container.style.display = '';
-                    container.style.justifyContent = '';
-                    container.style.alignItems = '';
-                }
-
-                if (document.fullscreenElement) {
-                    let minDimension = Math.min(screen.width, screen.height);
-                    canvas.width = minDimension;
-                    canvas.height = minDimension;
-                } else {
-                    canvas.width = 1024;
-                    canvas.height = 1024;
-                }
-                // Redraw the stored image onto the resized canvas
-                ctx.drawImage(tempCanvasImage, 0, 0, canvas.width, canvas.height);
-
-                // Update caption style
-                updateCaptionStyle();
+                tempCanvasImage.addEventListener('load', function () {
+                    // Redraw the stored image onto the resized canvas
+                    ctx.drawImage(tempCanvasImage, 0, 0, canvas.width, canvas.height);
+                    // Update caption style
+                    updateCaptionStyle();
+                });
             }
+        }
 
-            function handleFullscreenChange() {
-                let canvas = document.getElementById('myCanvas');
-                let ctx = canvas.getContext('2d');
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
 
-                // Store the current canvas content as an image
-                let tempCanvasImage = new Image();
-                tempCanvasImage.src = canvas.toDataURL();
-
-                if (!document.fullscreenElement) {
-                    canvas.width = 1024;
-                    canvas.height = 1024;
-
-                    // Reset container styles when exiting fullscreen
-                    let container = document.getElementsByClassName('container')[0];
-                    container.style.width = '';
-                    container.style.height = '';
-                    container.style.display = '';
-                    container.style.justifyContent = '';
-                    container.style.alignItems = '';
-
-                    tempCanvasImage.addEventListener('load', function () {
-                        // Redraw the stored image onto the resized canvas
-                        ctx.drawImage(tempCanvasImage, 0, 0, canvas.width, canvas.height);
-                        // Update caption style
-                        updateCaptionStyle();
-                    });
-                }
-            }
-
-            document.addEventListener('fullscreenchange', handleFullscreenChange);
-
-            $("#fullscreen-toggle").on("click", function () {
-                toggleFullscreen()
-            });
+        $("#fullscreen-toggle").on("click", function () {
+            toggleFullscreen()
+        });
 
         });
     </script>
@@ -496,7 +505,7 @@
 <body>
     <h1>Anime Creator</h1>
 
-    <div id="hideForms">
+    <div id="hideForms" style="display: none;">
 
         <h2>Step 1: Create Summary</h2>
 
@@ -585,7 +594,7 @@ zombie
         <input type="text" id="whichChapter" style="width: 3ch;" value="1"></input>
         <input type="text" id="whichScene" style="width: 3ch;" value="1"></input>
 
-
+    
 
     <button type="submit" id="playMovie">Play Movie</button>
     <button type="submit" id="stopMovie">Stop Movie</button>

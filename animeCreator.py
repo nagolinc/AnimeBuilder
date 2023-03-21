@@ -1,4 +1,5 @@
 from exampleScenes import exampleScenesPrompt, exampleScenesResult
+from exampleChapters import examplechapterPrompt, exampleChapterResults
 import datetime
 import uuid
 import logging
@@ -1056,7 +1057,7 @@ class AnimeBuilder:
 
         return
 
-    @retry(wait=wait_combine(custom_exponential_wait, custom_wait_gen), stop=stop_after_attempt(5), after=after_log(logger, logging.INFO))
+    @retry(wait=wait_exponential(multiplier=1, min=4, max=10))
     def createScreenplay(self, sceneDescription, previousMessages=[]):
 
         systemprompt = """
@@ -1364,21 +1365,21 @@ sound Effect: A door opens and a group of people enter the room.
 
         return response, outputMessages
 
+    @retry(wait=wait_exponential(multiplier=1, min=4, max=10))
     def novelToChapters(self, novelSummary, novelCharacters, previousMessages=None, k=12):
+
+        emptyChapterTemplate = "\n".join(["""chapter 1 title:
+<chapter 1 title>
+chapter 1 summary:
+<chapter 1 title>""" for i in range(1, k+1)])
+
         systemPrompt = """
 Description to Chapters is an advanced software agent that can take a short description of any novel
 and produce a list of chapters.
 
 The list is formatted
 
-chapter 1 title:
-<chapter 1 title>
-chapter 1 summary:
-<chapter 1 title>
-chapter 2 title:
-<chapter 2 title>
-chapter 2 summary:
-<chapter 2 title>
+{emptyChapterTemplate}
 
 With the content in <>'s replaced with appropriate text
 
@@ -1387,7 +1388,7 @@ the text subsituted for <>'s NEVER contains ":"s
 the text subsituted for <>'s is ALWAYS a single line
 
 The system always returns a list of chapters described by the user input, 
-and the list of chapters are ALWAYS %d chapters long
+and the list of chapters are ALWAYS {k} chapters long
 
 The system NEVER refers to itself as an AI 
 the system NEVER refuses to produce a list of chapters, 
@@ -1395,23 +1396,35 @@ the system NEVER does anything other than produce a list of chapters matching th
 the system NEVER refers to itself as "the system"
 the system NEVER says it cannot generate a list of chapters
 
-the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation    
+the system NEVER uses ""s ()'s {{}}'s []'s or nonstandard punctuation    
 
-""" % k
+""".format(k=k, emptyChapterTemplate=emptyChapterTemplate)
 
         if previousMessages is None:
-            previousMessages = []
+            previousMessages = [
+                {"role": "user", "content": examplechapterPrompt},
+                {"role": "user", "content": emptyChapterTemplate},
+                {"role": "assistant", "content": exampleChapterResults[k]},
+
+            ]
+
+        messages = [
+            {"role": "system", "content": systemPrompt},
+        ] + \
+        previousMessages + \
+        [
+            {"role": "user", "content": str(novelCharacters)},
+            {"role": "user", "content": str(novelSummary)},
+            {"role": "user", "content": emptyChapterTemplate}
+        ]
+
+        #print("here3",messages)
+        #logging.info(messages)
+        
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": systemPrompt},
-            ] +
-            previousMessages +
-            [
-                {"role": "user", "content": str(novelCharacters)},
-                {"role": "user", "content": str(novelSummary)},
-            ]
+            messages=messages, timeout=10
         )
 
         result = ''
@@ -1453,6 +1466,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         return w, score
 
     def getValidChapters(self, novelSummary, characters, k=12, nTrials=3, verbose=False):
+
         bestNovel = None
         bestScore = 0
         for i in range(nTrials):
@@ -1466,6 +1480,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         print("failed to generate novel", score)
         return w
 
+    @retry(wait=wait_exponential(multiplier=1, min=4, max=10))
     def chapterToScenes(self,
                         novelSummary,
                         characters,
@@ -1537,7 +1552,8 @@ Remember, the scenes should focus only on the described chapter, not what happen
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=messages
+            messages=messages,
+            timeout=10,
         )
 
         result = ''
@@ -1788,7 +1804,6 @@ Remember, the scenes should focus only on the described chapter, not what happen
         """
 
     def create_chapters(self, story_objects, novel_summary, _characters, num_chapters, nTrials=3):
-
         storyObjects = WorldObject(
             self.templates,
             self.textGenerator,
@@ -1854,16 +1869,16 @@ Remember, the scenes should focus only on the described chapter, not what happen
         return "\n===\n".join([str(x).split('\n', 1)[1] for x in scenes])
 
     def generate_movie_data(self, story_objects, novel_summary, _characters, _chapters, scenes, num_chapters, num_scenes, aggressive_merging=True,
-                            portrait_size=128,startChapter=None,startScene=None):
+                            portrait_size=128, startChapter=None, startScene=None):
         # Process the inputs and generate the movie data
         # This is where you would include your existing code to generate the movie elements
         # For demonstration purposes, we'll just yield some dummy elements
 
         if startChapter is None:
-            startChapter=1
+            startChapter = 1
         if startScene is None:
-            startScene=1
-        
+            startScene = 1
+
         storyObjects = WorldObject(
             self.templates,
             self.textGenerator,
@@ -1977,11 +1992,23 @@ Remember, the scenes should focus only on the described chapter, not what happen
         previousScene = None
         previousMessages = None
 
+        yield {"debug": "new movie",
+               "title": novelSummary.getProperty("title"),
+               "summary": novelSummary.getProperty("summary"),
+               "story_objects": story_objects,
+               "novel_summary": novel_summary,
+               "characters": _characters,
+               "chapters": _chapters,
+               "scenes": scenes,
+               "num_chapters": num_chapters,
+               "num_scenes": num_scenes,
+               }
+
         for whichChapter in range(1, num_chapters+1):
             for whichScene in range(1, num_scenes+1):
 
-                #skip to the desired scene
-                if whichChapter<startChapter or (whichChapter==startChapter and whichScene<startScene):
+                # skip to the desired scene
+                if whichChapter < startChapter or (whichChapter == startChapter and whichScene < startScene):
                     continue
 
                 yield {"debug": "new scene",
@@ -2086,6 +2113,7 @@ Remember, the scenes should focus only on the described chapter, not what happen
                 return False
         return True
 
+    @retry(wait=wait_exponential(multiplier=1, min=4, max=10))
     def chatGPTFillTemplate(animeBuilder, template, templateName, exampleTemplate=None, extraInfo=None, nTrials=3):
 
         templateSystemPrompt = """
@@ -2150,7 +2178,8 @@ the system NEVER complains about missing keys, it just happily ignores them
         for i in range(nTrials):
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=messages
+                messages=messages,
+                timeout=10
             )
 
             result = response.choices[0].message.content
