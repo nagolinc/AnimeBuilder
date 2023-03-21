@@ -1785,6 +1785,14 @@ Remember, the scenes should focus only on the described chapter, not what happen
             customTemplate=novel_summary
         )
 
+
+        objects={"novelSummary":novelSummary}
+
+        novel_characters=self.chatGPTFillTemplate2(templates["novelCharacters"],"novelCharacters",objects=objects)
+
+        if novel_characters is not None:
+            return novel_characters
+
         characters = WorldObject(
             self.templates,
             self.textGenerator,
@@ -1796,11 +1804,7 @@ Remember, the scenes should focus only on the described chapter, not what happen
 
         return str(characters).split('\n', 1)[1]
         """
-        objects={"novelSummary":novelSummary}
-
-        novel_characters=self.chatGPTFillTemplate2(templates["novelCharacters"],"novelCharacters",objects=objects)
-
-        return novel_characters
+        
         """
 
     def create_chapters(self, story_objects, novel_summary, _characters, num_chapters, nTrials=3):
@@ -2107,13 +2111,13 @@ Remember, the scenes should focus only on the described chapter, not what happen
         for key in keys:
             if not w.has(key):
                 print("missing key", key)
-                return False
+                return False, None
             p = w.getProperty(key)
-            if re.search(r'[:\[\]{}]', p):
-                return False
-        return True
+            if re.search(r'[:\[\]{}<>]', p):
+                return False, None
+        return True,result
 
-    @retry(wait=wait_exponential(multiplier=1, min=4, max=10))
+    #@retry(wait=wait_exponential(multiplier=1, min=4, max=10))
     def chatGPTFillTemplate(animeBuilder, template, templateName, exampleTemplate=None, extraInfo=None, nTrials=3):
 
         templateSystemPrompt = """
@@ -2174,7 +2178,7 @@ the system NEVER complains about missing keys, it just happily ignores them
         messages += [{"role": "user", "content": tt[-1]}]
         keys = [line.split(":")[0]
                 for line in tt[-1].split("\n") if ":" in line]
-
+        
         for i in range(nTrials):
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
@@ -2184,12 +2188,14 @@ the system NEVER complains about missing keys, it just happily ignores them
 
             result = response.choices[0].message.content
             logging.info("RESPONSE %d %s", i, result)
-            if animeBuilder.validate(result, keys, "novelSummary"):
+            isValid, result = animeBuilder.validate(result, keys, "novelSummary")
+            if isValid:
                 return result
         print("this should never happen!")
-        return random.choice(tt[:-1])
+        #return random.choice(tt[:-1])
+        return None
 
-    def chatGPTFillTemplate2(animeBuilder, template, templateName, extraInfo=None, objects=None):
+    def chatGPTFillTemplate2(animeBuilder, template, templateName, extraInfo=None, objects=None,nTrials=3):
 
         pattern = r'\{([^:{}]+)(:[^:]*:.*?)?\}'
         t = re.sub(pattern, r'<\1>', template)
@@ -2283,7 +2289,7 @@ the system NEVER complains about missing keys, it just happily ignores them
         if len(extraInfo) == 0:
             extraInfo = None
 
-        print("about to die\n==\n", extraInfo,
-              "\n==\n", filteredTemplate, "\n==")
+        #print("about to die\n==\n", extraInfo,
+        #      "\n==\n", filteredTemplate, "\n==")
 
-        return animeBuilder.chatGPTFillTemplate(filteredTemplate, templateName, exampleTemplate=exampleTemplate, extraInfo=extraInfo, nTrials=3)
+        return animeBuilder.chatGPTFillTemplate(filteredTemplate, templateName, exampleTemplate=exampleTemplate, extraInfo=extraInfo, nTrials=nTrials)

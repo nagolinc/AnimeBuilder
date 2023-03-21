@@ -22,8 +22,11 @@
                 url: '/get_all_movies',
                 success: function(data) {
                     data.forEach((movie) => {
+                        const imagePath = movie.image ? `../${movie.image}` : ''; // Add the "../" prefix to the image path if it exists
                         const movieListItem = `<li class="list-group-item">
-                            <a href="/movie/${movie.movie_id}">${movie.title}</a>
+                            <a href="/movie/${movie.movie_id}">
+                                <img src="${imagePath}" alt="${movie.title} Image" style="max-width: 100px; max-height: 100px;"> ${movie.title}
+                            </a>
                         </li>`;
                         $("#movie-list").append(movieListItem);
                     });
@@ -34,5 +37,6 @@
             });
         });
     </script>
+    
 </body>
 </html>

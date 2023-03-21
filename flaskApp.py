@@ -141,8 +141,14 @@ class MovieGeneratorWrapper:
             self.current_count = count
 
         current_element = self.movie_elements_table.find_one(movie_id=self.movie_id, count=self.current_count)
+        
         if current_element is None:
-            current_element = self._queue.get()
+            found_count=-1
+            while found_count < self.current_count:
+                current_element = self._queue.get()
+                if current_element is None:
+                    break
+                found_count=current_element["count"]
 
         if current_element is not None:
             if self.available_count - self.current_count < self.queue_size:
@@ -151,6 +157,10 @@ class MovieGeneratorWrapper:
             current_element = {k: v for k, v in current_element.items() if v is not None}
 
         self.current_count += 1
+
+        if current_element is not None:
+
+            print("Foo",count,current_element["count"])
 
         return current_element
     
@@ -185,13 +195,13 @@ def get_next_element(movie_id):
 
     if movie_generator is None:
         # Check if there's at least one element in the movie_elements_table with movie_id
-        element_count = db['movie_elements'].count({"movie_id": movie_id})
+        element_count = db['movie_elements'].count(movie_id=movie_id)
         
         if element_count == 0:
             return jsonify({"error": "Movie not found"}), 404
 
         # Create an instance of the DatabaseMovieGenerator class and use it as the movie_generator
-        movie_generator = DatabaseMovieGenerator(movie_id, db['movie_elements'])
+        movie_generator = DatabaseMovieGenerator(movie_id)
 
     count = request.args.get('count', None)
     if count is not None:
@@ -205,10 +215,11 @@ def get_next_element(movie_id):
     return jsonify(element)
 
 
+
 @app.route('/get_all_movies', methods=['GET'])
 def get_all_movies():
     # Find all movie elements with "debug": "new movie"
-    movie_elements = list(db['movie_elements'].find(debug="new movie"))
+    movie_elements = db['movie_elements'].find(debug="new movie")
 
     # Extract the movie information (title, summary, etc.) from the movie elements
     movies_list = []
@@ -218,10 +229,18 @@ def get_all_movies():
             "title": element["title"],
             "summary": element["summary"],
         }
+        
+        # Find the first element with movie_id where the image field is not null
+        image_elements = db['movie_elements'].find(movie_id=element["movie_id"], image={'notlike': ''})
+        image_element = next(iter(image_elements), None)
+        
+        # Add the image field to movie_info if an element is found
+        if image_element:
+            movie_info["image"] = image_element["image"]
+
         movies_list.append(movie_info)
 
     return jsonify(movies_list)
-
 
 @app.route('/movies')
 def movie_list():

@@ -179,6 +179,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             stop="\n",
             max_tokens=self.cfg["genTextAmount_max"],
             frequency_penalty=self.cfg["repetition_penalty"],
+            timeout=10
         )['choices'][0]['text']
         return completion
 

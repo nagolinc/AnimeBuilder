@@ -466,8 +466,6 @@ Charon is the queen of the undead, who reside in the marsh. She is very evil and
 >Novel summary:
 >{novelSummary.summary}
 
->This novel features the following characters
-
 main character name:
 {main character name:TEXT:}
 main character description:
