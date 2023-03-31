@@ -61,6 +61,10 @@ cow
     "color":"""    
 Output a list of colors
 
+#
+
+#NOREP
+
 description:
 red
 

@@ -159,8 +159,8 @@ class MovieGeneratorWrapper:
         self.current_count += 1
 
         if current_element is not None:
-
-            print("Foo",count,current_element["count"])
+            #print("Foo",count,current_element["count"])
+            pass
 
         return current_element
     
@@ -286,6 +286,19 @@ if __name__ == '__main__':
 
     parser.add_argument('--ngrok', action='store_true',
                         help='use ngrok tunnel')
+    
+    parser.add_argument('--musicDuration', type=int, default=30,
+                        help='Duration of background music loop (default: 30)')
+    
+    # Add the argument for the list of 4 integers with default values
+    parser.add_argument(
+        "-s",
+        "--imageSizes",
+        nargs=4,
+        type=int,
+        default=[512, 512, 1024, 1024],
+        help="Four integers representing image sizes (default: 512 512 1024 1024)",
+    )
 
     args = parser.parse_args()
 
@@ -312,6 +325,8 @@ if __name__ == '__main__':
                                 doImg2Img=args.img2img,
                                 negativePrompt=args.negativePrompt,
                                 suffix=args.promptSuffix,
+                                musicDuration=args.musicDuration,
+                                imageSizes=args.imageSizes,
                                 )
 
     if args.extraTemplatesFile:

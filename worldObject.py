@@ -170,6 +170,9 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         '''
     
     def gpt3GenerateText(self,textInput):
+
+        if self.verbose:
+            print("GPT3 INPUT",textInput)
         
         #call gpt3 api
         completion = openai.Completion.create(
@@ -179,8 +182,13 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             stop="\n",
             max_tokens=self.cfg["genTextAmount_max"],
             frequency_penalty=self.cfg["repetition_penalty"],
+            presence_penalty=self.cfg["repetition_penalty"],
             timeout=10
         )['choices'][0]['text']
+
+        if self.verbose:
+            print("GPT3 OUTPUT",completion)
+
         return completion
 
 
@@ -326,6 +334,8 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             thisObject = objects[-1]  # by default choose last object
         else:
             thisObject = random.choice(objects)
+
+        self.chosenObject = thisObject
 
         output = {}
         propName = "NONE"
@@ -486,13 +496,14 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         raise ValueError("property not found!")
 
     def __repr__(self):
-        s = self.filledTemplate.split("\n\n")
+        '''s = self.filledTemplate.split("\n\n")
         # remove empty lines
         v = ["\n".join([line for line in lines.split(
             "\n") if len(line.strip()) > 0]) for lines in s]
         v = [x for x in v if len(x) > 0]
         r = v[-1]
-        return "<world object:%s>\n" % self.objectName+r
+        return "<world object:%s>\n" % self.objectName+r'''
+        return "<world object:%s>\n" % self.objectName+self.chosenObject
 
     def __str__(self):
         #try:

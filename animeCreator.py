@@ -11,6 +11,10 @@ from mubert import generate_track_by_prompt
 import IPython.display as ipd
 from fairseq.models.text_to_speech.hub_interface import TTSHubInterface
 from fairseq.checkpoint_utils import load_model_ensemble_and_task_from_hf_hub
+
+import pits.app as pits
+
+
 from diffusers.models import AutoencoderKL
 from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler, StableDiffusionImg2ImgPipeline, UniPCMultistepScheduler, DiffusionPipeline
 import time
@@ -30,7 +34,10 @@ from transformers import pipeline
 import re
 import os
 import openai
-from tenacity import retry, wait_exponential, wait_combine, stop_after_attempt, after_log
+from tenacity import retry, wait_exponential, wait_combine, stop_after_attempt, after_log, before_sleep_log
+from diffusers import AudioLDMPipeline
+from example_classifications import example_classifications
+
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +84,20 @@ class AnimeBuilder:
         suffix=", anime drawing",
         riffusionSuffix=" pleasing rythmic background music",
         savePath="./static/samples/",
-        saveImages=False
+        saveImages=False,
+        audioLDM="cvssp/audioldm",
+        soundEffectDuration=1.5,
+        musicDuration=16,
+        musicSuffix=" movie soundtrack background music, smooth jazz",
+        imageSizes=[512,512,1024,1024],
+        usePITS=True
     ):
+        
+        self.imageSizes = imageSizes
+
+        self.soundEffectDuration = soundEffectDuration
+        self.musicDuration = musicDuration
+        self.musicSuffix=musicSuffix
         self.savePath = savePath
         self.saveImages = saveImages
 
@@ -136,6 +155,11 @@ class AnimeBuilder:
 
         if self.verbose:
             print("LOADING TEXT MODEL")
+
+        if audioLDM is not None:
+            self.audioLDMPipe = AudioLDMPipeline.from_pretrained(
+                audioLDM, torch_dtype=torch.float16)
+            self.audioLDMPipe = self.audioLDMPipe.to("cuda")
 
         if textModel == "GPT3":
             pass
@@ -287,28 +311,34 @@ class AnimeBuilder:
         # tts
         #
 
-        models, cfg, task = load_model_ensemble_and_task_from_hf_hub(
-            "facebook/fastspeech2-en-200_speaker-cv4",  # random
-            # "Voicemod/fastspeech2-mf4",#morgan freedman
-            # "Voicemod/fastspeech2-en-male1",#english male
-            # "Voicemod/fastspeech2-en-ljspeech",#female
-            # 'facebook/tts_transformer-es-css10',#spanish male, doesn't work for english
-            arg_overrides={"vocoder": "hifigan", "fp16": False, }
-        )
+        self.usePITS = usePITS
+        if usePITS:
+            self.pitsTTS=pits.GradioApp(pits.get_default_args())
 
-        self.tts_models = models
-        self.tts_cfg = cfg
-        self.tts_task = task
+        else:
 
-        # model = models[0]
-        TTSHubInterface.update_cfg_with_data_cfg(cfg, task.data_cfg)
-        self.tts_generator = task.build_generator(models, cfg)
+            models, cfg, task = load_model_ensemble_and_task_from_hf_hub(
+                "facebook/fastspeech2-en-200_speaker-cv4",  # random
+                # "Voicemod/fastspeech2-mf4",#morgan freedman
+                # "Voicemod/fastspeech2-en-male1",#english male
+                # "Voicemod/fastspeech2-en-ljspeech",#female
+                # 'facebook/tts_transformer-es-css10',#spanish male, doesn't work for english
+                arg_overrides={"vocoder": "hifigan", "fp16": False, }
+            )
 
-        #  000000000011111111112222222222333333333344444444444555555555
-        #  012345678901234567890123456789012345678901234567890123456789
-        s = "FMFMMMMMFMMMFFMFFMMMMMMmffmmfmmfmfmmmmmmfmmmmmfmmmffmmmm".upper()
-        self.maleVoices = [i for i in range(len(s)) if s[i] == "M"]
-        self.femaleVoices = [i for i in range(len(s)) if s[i] == "F"]
+            self.tts_models = models
+            self.tts_cfg = cfg
+            self.tts_task = task
+
+            # model = models[0]
+            TTSHubInterface.update_cfg_with_data_cfg(cfg, task.data_cfg)
+            self.tts_generator = task.build_generator(models, cfg)
+
+            #  000000000011111111112222222222333333333344444444444555555555
+            #  012345678901234567890123456789012345678901234567890123456789
+            s = "FMFMMMMMFMMMFFMFFMMMMMMmffmmfmmfmfmmmmmmfmmmmmfmmmffmmmm".upper()
+            self.maleVoices = [i for i in range(len(s)) if s[i] == "M"]
+            self.femaleVoices = [i for i in range(len(s)) if s[i] == "F"]
 
     def doGen(self, prompt, num_inference_steps=30, recursion=0):
 
@@ -324,11 +354,11 @@ class AnimeBuilder:
                               negative_prompt=[self.negativePrompt],
                               guidance_scale=7.5,
                               num_inference_steps=num_inference_steps,
-                              width=512,
-                              height=512).images[0]
+                              width=self.imageSizes[0],
+                              height=self.imageSizes[1]).images[0]
 
         if self.doImg2Img:
-            img2Input = image.resize((1024, 1024))
+            img2Input = image.resize((self.imageSizes[2], self.imageSizes[3]))
 
             # some nonsense to handle long prompts, based off of https://github.com/huggingface/diffusers/issues/2136#issuecomment-1409978949
             # todo figure out what this
@@ -392,34 +422,81 @@ class AnimeBuilder:
 
         return output
 
-    def textToSpeech(self, text, voice):
+    def generateAudio(self, prompt, duration=3, num_inference_steps=10):
+        mp3file_name = getFilename(self.savePath, "mp3")
+        wavfile_name = getFilename(self.savePath, "wav")
+
+        audio = self.audioLDMPipe(
+            prompt, num_inference_steps=num_inference_steps, audio_length_in_s=duration).audios[0]
+
+        audio = ipd.Audio(audio, rate=16000, autoplay=True)
+        with open(wavfile_name, 'wb') as f:
+            f.write(audio.data)
+
+        wavfile = AudioSegment.from_wav(wavfile_name)
+        wavfile.export(mp3file_name, format="mp3")
+
+        return mp3file_name, duration
+
+    def textToSpeech(self, text, voice,gender):
 
         mp3file_name = getFilename(self.savePath, "mp3")
         wavfile_name = getFilename(self.savePath, "wav")
 
-        try:
-            with autocast("cuda"):
-                self.tts_task.data_cfg.hub["speaker"] = voice
-                sample = TTSHubInterface.get_model_input(self.tts_task, text)
-                # print("about to die",models[0],sample)
-                wav, rate = TTSHubInterface.get_prediction(
-                    self.tts_task, self.tts_models[0], self.tts_generator, sample)
-                # print("huh?",wav,rate,len(wav)/rate)
-                duration = len(wav)/rate
 
-            audio = ipd.Audio(wav.cpu(), rate=rate, autoplay=True)
+        if self.usePITS:
+
+            if gender=="male":
+                scope_shift=10
+            else:
+                scope_shift=-10
+
+            duration_shift=1.0
+            seed=1
+
+            ph,(rate,wav)=self.pitsTTS.inference(text,voice,seed,scope_shift,duration_shift)
+
+            audio = ipd.Audio(wav, rate=rate, autoplay=True)
             with open(wavfile_name, 'wb') as f:
                 f.write(audio.data)
+
+            duration = len(wav)/rate
 
             wavfile = AudioSegment.from_wav(wavfile_name)
             wavfile.export(mp3file_name, format="mp3")
 
             return mp3file_name, duration
-        except:
-            print("Error generating text", text, voice)
-    # music
+
+
+        else:
+
+            try:
+                with autocast("cuda"):
+                    self.tts_task.data_cfg.hub["speaker"] = voice
+                    sample = TTSHubInterface.get_model_input(self.tts_task, text)
+                    # print("about to die",models[0],sample)
+                    wav, rate = TTSHubInterface.get_prediction(
+                        self.tts_task, self.tts_models[0], self.tts_generator, sample)
+                    # print("huh?",wav,rate,len(wav)/rate)
+                    duration = len(wav)/rate
+
+                audio = ipd.Audio(wav.cpu(), rate=rate, autoplay=True)
+                with open(wavfile_name, 'wb') as f:
+                    f.write(audio.data)
+
+                wavfile = AudioSegment.from_wav(wavfile_name)
+                wavfile.export(mp3file_name, format="mp3")
+
+                return mp3file_name, duration
+            except:
+                print("Error generating text", text, voice)
+        # music
 
     def generate_track_by_prompt_vol(self, prompt, vol=1.0, duration=8, loop=True, autoplay=True):
+
+        #if self.audioLDMPipe is not None:
+        filename, duration = self.generateAudio(prompt, duration=duration)
+        return filename
 
         mp3file_name = getFilename(self.savePath, "mp3")
         wavfile_name = getFilename(self.savePath, "wav")
@@ -636,10 +713,14 @@ class AnimeBuilder:
         for thisCharacter in [mainCharacter]+supportingCharacters:
             name = str(thisCharacter.getProperty("name"))
             gender = thisCharacter.getProperty("gender")
-            if gender == "male":
-                voices[name] = random.choice(self.maleVoices)
+
+            if self.usePITS:
+                voices[name]=random.randint(0,len(self.pitsTTS.hps.data.speakers)-1)
             else:
-                voices[name] = random.choice(self.femaleVoices)
+                if gender == "male":
+                    voices[name] = random.choice(self.maleVoices)
+                else:
+                    voices[name] = random.choice(self.femaleVoices)
             genders[name] = gender
             description = thisCharacter.getProperty("description")
 
@@ -669,7 +750,8 @@ class AnimeBuilder:
             thisSubplot = plotOverview.getProperty(wss)
             story.objects['subplot'] = thisSubplot
 
-            audio = self.generate_track_by_prompt_vol(scene, vol=0.25)
+            audio = self.generate_track_by_prompt_vol(
+                scene, vol=0.25, duration=self.musicDuration)
 
             # parse out character1 and character2
             character1 = None
@@ -745,10 +827,11 @@ class AnimeBuilder:
                     name, dialogue = line.split(":")
                     voice = voices[name]
                     portrait = portraits[name]
+                    gender=genders[name]
                     p2 = portrait.resize((portrait_size, portrait_size))
                     thisImg.paste(
                         p2, (thisImg.size[0]-portrait_size, thisImg.size[1]-portrait_size))
-                    speech, duration = self.textToSpeech(dialogue, voice)
+                    speech, duration = self.textToSpeech(dialogue, voice,gender)
                     yield {"image": thisImg}
                     yield {"speech": speech,
                            "duration": duration+1,
@@ -823,13 +906,30 @@ class AnimeBuilder:
         print("this should never happen!")
         return tag
 
-    def mergeName(self, name1, names):
+    def mergeName0(self, name1, names):
         s1 = set(name1.lower().split())-self.ignored_words
+        s1 = set([x for x in s1 if len(x) > 3])
         for name2 in names:
             s2 = set(name2.lower().split())-self.ignored_words
             if s1.intersection(s2):
+                #don't merge if they contain different digits
+                digits=set([str(i) for i in range(10)])
+                if len(s1.intersection(digits))>0 and len(s2.intersection(digits))>0:
+                    if s1.intersection(digits)!=s2.intersection(digits):
+                        continue
                 return name2
-
+        return name1
+    
+    def mergeName(self, name1, names):
+        s1 = set(name1.lower().split())-self.ignored_words
+        s1 = set([x for x in s1 if len(x) > 3])
+        for name2 in names:
+            s2 = set(name2.lower().split())-self.ignored_words
+            s2 = set([x for x in s2 if len(x) > 3])
+            if s1.issubset(s2):
+                return name2
+            if s1.issuperset(s2):
+                return name2
         return name1
 
     def enhancePrompt(self, prompt, characters):
@@ -923,10 +1023,13 @@ class AnimeBuilder:
             if name in voices:
                 continue
 
-            if gender == "male":
-                voices[name] = random.choice(self.maleVoices)
+            if self.usePITS:
+                voices[name]=random.randint(0,len(self.pitsTTS.hps.data.speakers)-1)
             else:
-                voices[name] = random.choice(self.femaleVoices)
+                if gender == "male":
+                    voices[name] = random.choice(self.maleVoices)
+                else:
+                    voices[name] = random.choice(self.femaleVoices)
             genders[name] = gender
             description = thisCharacter.getProperty("description")
 
@@ -940,7 +1043,7 @@ class AnimeBuilder:
 
             gender = thisCharacter.getProperty("gender")
             description = thisCharacter.getProperty("description")
-            prompt = "portrait of "+gender+", "+description + \
+            prompt = "portrait of "+name+" "+gender+", "+description + \
                 ", solid white background"+promptSuffix
 
             portrait = self.doGen(
@@ -948,7 +1051,7 @@ class AnimeBuilder:
             portraits[name] = portrait
             yield {"debug": description}
             yield {"image": portrait}
-            yield {"caption": "new character: %s" % description, "duration": 1}
+            yield {"caption": "new character: %s: %s" % (name,description), "duration": 1}
 
         lastPrompt = "an empty stage"
         t = 0
@@ -992,16 +1095,32 @@ class AnimeBuilder:
 
             elif tag == "music":
 
+                print("about to die",description)
+
+                musicPrompt=description+self.musicSuffix
+
                 audio = self.generate_track_by_prompt_vol(
-                    description, vol=0.25)
+                    musicPrompt, vol=0.25,
+                    duration=self.musicDuration
+                )
+
+                print("about to die",audio)
+
                 yield {"music": audio}
 
             elif tag == "sound effect":
 
                 # todo: implement
+                audio, duration = self.generateAudio(
+                    description, self.soundEffectDuration)
 
-                yield {"caption": "Sound Effect: %s" % description,
-                       "duration": settingDuration}
+                yield {"sound effect": audio,
+                       "description": description,
+                       "duration": duration,
+                       }
+
+                # yield {"caption": "Sound Effect: %s" % description,
+                #       "duration": settingDuration}
 
             elif tag == "action":
 
@@ -1037,6 +1156,7 @@ class AnimeBuilder:
                 # name, dialogue = tagn,description
                 dialogue = description
                 voice = voices[name]
+                gender = genders[name]
                 portrait = portraits[name]
                 p2 = portrait.resize((portrait_size, portrait_size))
                 thisImg.paste(
@@ -1048,7 +1168,7 @@ class AnimeBuilder:
                     print("this should never happen!", transcript)
                     continue
 
-                speech, duration = self.textToSpeech(dialogue, voice)
+                speech, duration = self.textToSpeech(dialogue, voice,gender)
                 yield {"image": thisImg}
                 yield {"speech": speech,
                        "duration": duration+1,
@@ -1057,7 +1177,7 @@ class AnimeBuilder:
 
         return
 
-    @retry(wait=wait_exponential(multiplier=1, min=4, max=10))
+    #@retry(wait=wait_exponential(multiplier=1, min=4, max=10),before_sleep=before_sleep_log(logger, logging.WARNING))
     def createScreenplay(self, sceneDescription, previousMessages=[]):
 
         systemprompt = """
@@ -1116,7 +1236,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
         return result
 
-    def classify_text_openai(self, text, categories=["setting", "action", "sound effect"]):
+    def classify_text_openai0(self, text, categories=["setting", "action", "sound effect"]):
         prompt = f"Classify the following line of text into one of these categories: setting, action, or sound effect:\n\n{text}\n\nCategory:"
 
         response = openai.Completion.create(
@@ -1140,6 +1260,44 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 best_category = category
 
         return best_category
+    
+
+    def classify_text_openai(self,text,categories=["setting", "action", "sound effect","tone","gesture"]):
+        
+        messages = example_classifications+[{"role": "user", "content": text}]
+
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages, timeout=10
+        )
+
+        result = ''
+        for choice in response.choices:
+            result += choice.message.content
+
+        output=result.lower().strip()
+
+        if result not in categories:
+            print("THIS SHOULD NEVER HAPPEN", result)
+            best_category = None
+            best_match = 0        
+            for category in categories:
+                match = result.count(category)
+                if match > best_match:
+                    best_match = match
+                    best_category = category
+
+            if best_match>0:
+                output= best_category
+            else:
+                output = "action"
+
+            print("output",output)
+
+        return output
+    
+
+
 
     def validateScreenplay(self, screenplay):
         score = 0
@@ -1195,6 +1353,13 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 score += 1
                 continue
 
+            if tag == "gesture":
+                tag="action"
+
+            if tag=="tone":
+                #TODO: fix this
+                continue
+
             # description cannot be empty
             if len(line.split(":")[1].strip()) == 0:
                 score += 1
@@ -1209,6 +1374,15 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                     tag = re.sub(pattern, "", tag).strip()
                     for match in re.findall(pattern, line):
                         category = self.classify_text_openai(match)
+
+                        if category == "gesture":
+                            category="action"
+
+                        if category=="tone":
+                            score += 1
+                            line = re.sub(pattern, "", line)
+                            continue
+
                         out += [category + ": " + tag + " " + match]
 
                     score += 1
@@ -1233,7 +1407,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
         return out, score
 
-    def getValidScreenplay(self, sceneDescription, nTrials=3, previousMessages=[], verbose=False):
+    def getValidScreenplay(self, sceneDescription, nTrials=3, previousMessages=[], allowed_errors=2, verbose=False):
         bestScreenplay = None
         _bestScreenplay = None
         bestScore = 999
@@ -1249,7 +1423,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             logging.info("screenplay:\n %s\n score %d/%d=%f",
                          s, score, len(v), score/len(v))
 
-            if len(v) > 8 and score == 0:
+            if len(v) > 8 and score <= allowed_errors:
                 return "\n".join(v)
             if len(v) > 8 and score/len(v) < bestScore:
                 logging.info("new best score! %f", score/len(v))
@@ -1270,6 +1444,8 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
     def continueSceneGPT(self, novelSummary, characters, chapters, allChapters, whichChapter, whichScene, previousMessages=None, num_chapters=12, num_scenes=5, max_tokens=1000, additionalScenePrompt=None, conclusionPrompt=None, verbose=False):
 
+        print("creating scene %d of chapter %d" % (whichScene, whichChapter))
+
         summarizeNovelMessage = WorldObject(
             self.templates,
             self.textGenerator,
@@ -1283,7 +1459,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         sceneSummary = allChapters[whichChapter -
                                    1].getProperty("scene %d summary" % whichScene)
 
-        print(summarizeNovelMessage)
+        #print(summarizeNovelMessage)
 
         print(sceneSummary)
 
@@ -1411,16 +1587,15 @@ the system NEVER uses ""s ()'s {{}}'s []'s or nonstandard punctuation
         messages = [
             {"role": "system", "content": systemPrompt},
         ] + \
-        previousMessages + \
-        [
+            previousMessages + \
+            [
             {"role": "user", "content": str(novelCharacters)},
             {"role": "user", "content": str(novelSummary)},
             {"role": "user", "content": emptyChapterTemplate}
         ]
 
-        #print("here3",messages)
-        #logging.info(messages)
-        
+        # print("here3",messages)
+        # logging.info(messages)
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -1726,6 +1901,8 @@ Remember, the scenes should focus only on the described chapter, not what happen
 
     def create_novel_summary(self, story_objects):
 
+        story_objects = story_objects.replace("\r\n", "\n")
+
         storyObjects = WorldObject(
             self.templates,
             self.textGenerator,
@@ -1767,7 +1944,14 @@ Remember, the scenes should focus only on the described chapter, not what happen
         novel_summary = self.chatGPTFillTemplate(
             self.templates["novelSummary"], "novelSummary", extraInfo=novelSuggestion)
 
-        return novel_summary
+        
+        
+        
+        story_objects_out = str(storyObjects).split("\n", 1)[1]
+
+        print("about to die",story_objects,storyObjects.filledTemplate,story_objects_out)
+
+        return {'story_objects': story_objects_out, 'novel_summary': novel_summary}
 
     def create_characters(self, story_objects, novel_summary):
 
@@ -1785,10 +1969,10 @@ Remember, the scenes should focus only on the described chapter, not what happen
             customTemplate=novel_summary
         )
 
+        objects = {"novelSummary": novelSummary}
 
-        objects={"novelSummary":novelSummary}
-
-        novel_characters=self.chatGPTFillTemplate2(templates["novelCharacters"],"novelCharacters",objects=objects)
+        novel_characters = self.chatGPTFillTemplate2(
+            templates["novelCharacters"], "novelCharacters", objects=objects)
 
         if novel_characters is not None:
             return novel_characters
@@ -1878,6 +2062,8 @@ Remember, the scenes should focus only on the described chapter, not what happen
         # This is where you would include your existing code to generate the movie elements
         # For demonstration purposes, we'll just yield some dummy elements
 
+        print("creating movie")
+
         if startChapter is None:
             startChapter = 1
         if startScene is None:
@@ -1942,6 +2128,8 @@ Remember, the scenes should focus only on the described chapter, not what happen
             for _scenes in all_scenes
         ]
 
+        print("generating characters")
+
         mainCharacter = WorldObject(
             self.templates,
             self.textGenerator,
@@ -1950,6 +2138,7 @@ Remember, the scenes should focus only on the described chapter, not what happen
                 "name": characters.getProperty("main character name"),
                 "description text": characters.getProperty("main character description"),
             },
+            #verbose=True
         )
 
         supportingCharacter1 = WorldObject(
@@ -2007,6 +2196,8 @@ Remember, the scenes should focus only on the described chapter, not what happen
                "num_chapters": num_chapters,
                "num_scenes": num_scenes,
                }
+
+        print("starting movie")
 
         for whichChapter in range(1, num_chapters+1):
             for whichScene in range(1, num_scenes+1):
@@ -2115,9 +2306,9 @@ Remember, the scenes should focus only on the described chapter, not what happen
             p = w.getProperty(key)
             if re.search(r'[:\[\]{}<>]', p):
                 return False, None
-        return True,result
+        return True, result
 
-    #@retry(wait=wait_exponential(multiplier=1, min=4, max=10))
+    # @retry(wait=wait_exponential(multiplier=1, min=4, max=10))
     def chatGPTFillTemplate(animeBuilder, template, templateName, exampleTemplate=None, extraInfo=None, nTrials=3):
 
         templateSystemPrompt = """
@@ -2178,7 +2369,7 @@ the system NEVER complains about missing keys, it just happily ignores them
         messages += [{"role": "user", "content": tt[-1]}]
         keys = [line.split(":")[0]
                 for line in tt[-1].split("\n") if ":" in line]
-        
+
         for i in range(nTrials):
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
@@ -2188,14 +2379,15 @@ the system NEVER complains about missing keys, it just happily ignores them
 
             result = response.choices[0].message.content
             logging.info("RESPONSE %d %s", i, result)
-            isValid, result = animeBuilder.validate(result, keys, "novelSummary")
+            isValid, result = animeBuilder.validate(
+                result, keys, "novelSummary")
             if isValid:
                 return result
         print("this should never happen!")
-        #return random.choice(tt[:-1])
+        # return random.choice(tt[:-1])
         return None
 
-    def chatGPTFillTemplate2(animeBuilder, template, templateName, extraInfo=None, objects=None,nTrials=3):
+    def chatGPTFillTemplate2(animeBuilder, template, templateName, extraInfo=None, objects=None, nTrials=3):
 
         pattern = r'\{([^:{}]+)(:[^:]*:.*?)?\}'
         t = re.sub(pattern, r'<\1>', template)
@@ -2265,6 +2457,8 @@ the system NEVER complains about missing keys, it just happily ignores them
         else:
             augmentedTemplate = template
 
+        logger.info("augmentedTemplate %s", augmentedTemplate)
+
         if extraInfo is None:
             extraInfo = ""
 
@@ -2289,7 +2483,7 @@ the system NEVER complains about missing keys, it just happily ignores them
         if len(extraInfo) == 0:
             extraInfo = None
 
-        #print("about to die\n==\n", extraInfo,
+        # print("about to die\n==\n", extraInfo,
         #      "\n==\n", filteredTemplate, "\n==")
 
         return animeBuilder.chatGPTFillTemplate(filteredTemplate, templateName, exampleTemplate=exampleTemplate, extraInfo=extraInfo, nTrials=nTrials)
