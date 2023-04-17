@@ -38,7 +38,7 @@ class GradioApp:
         phones = [re.sub("[0-9]", "", p) for p in self.g2p(text)]
         tone = [0 for p in phones]
         if self.hps.data.add_blank:
-            text_norm = [_symbol_to_id[symbol] for symbol in phones]
+            text_norm = [_symbol_to_id[symbol] if symbol in _symbol_to_id else _symbol_to_id['_'] for symbol in phones ]
             text_norm = commons.intersperse(text_norm, 0)
             tone = commons.intersperse(tone, 0)
         else:

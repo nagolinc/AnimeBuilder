@@ -97,9 +97,33 @@ antagonist description:
     
 ""","storyObjects":"""
 
-scene prompt:
-make sure to include lots of action!
+#
 
+#NOREP
+
+novel suggestion:
+a story about bees
+
+novel suggestion:
+slime ranching in space
+
+novel suggestion:
+zombie bears
+
+novel suggestion:
+robots go on a picnic on the moom
+
+novel suggestion:
+a penguin runs for president
+
+novel suggestion:
+catgirls fight crime
+
+novel suggestion:
+ancient egyptian mummy becomes a tv idol
+
+novel suggestion:
+{novel suggestion:TEXT:}
 
 """
 

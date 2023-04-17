@@ -2,9 +2,27 @@
 
 import os
 import glob
+import shutil
 
-#remove database
-os.remove('movie_elements.db')
+#remove database if it exists
+if os.path.exists('movie_elements.db'):
+    os.remove('movie_elements.db')
+
+#remove any directories in /static/samples, even if they arent' empty
+dirs=glob.glob("./static/samples/*/")
+for d in dirs:
+    shutil.rmtree(d)
+
+#remove any jpgs
+jpgs=glob.glob("./static/samples/*.jpg")
+for jpg in jpgs:
+    os.remove(jpg)
+    
+
+#remove any .pickle files in /static/samples
+pickles=glob.glob("./static/samples/*.pickle")
+for p in pickles:
+    os.remove(p)
 
 pngs=glob.glob("./static/samples/*.png")
 for png in pngs:

@@ -1,3 +1,4 @@
+import queue
 import concurrent.futures
 import os
 import openai
@@ -9,18 +10,45 @@ from animeCreator import AnimeBuilder, getFilename
 import uuid
 from flask_ngrok2 import run_with_ngrok
 import dataset
+import logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 app = Flask(__name__)
+
+def handleExtraTemplates(extraTemplates):
+    templates=extraTemplates.split("===")
+    for template in templates:
+        #find the first line that starts with > and use it to get template name
+        lines=template.split("\n")
+        templateName=None
+        for line in lines:
+            if line.startswith(">"):
+                templateName=line[1:].strip() #remove the > and any whitespace
+                break
+        #make sure we got a template name
+        if templateName is None:
+            print("Template name not found")
+            continue
+        #add the template to animeBuilder.templates
+        animeBuilder.templates[templateName]=template
 
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
+@app.route('/editor')
+def editor():
+    return render_template('movie_editor.html')
+
 
 @app.route('/create_summary', methods=['POST'])
 def create_summary():
     data = request.get_json()
+    #handle extra templates
+    extra_templates = data.get("extraTemplates", [])
+    handleExtraTemplates(extra_templates)
     story_objects = data.get("storyObjects", {})
     novel_summary = animeBuilder.create_novel_summary(story_objects)
     return jsonify(novel_summary)
@@ -29,6 +57,9 @@ def create_summary():
 @app.route('/create_characters', methods=['POST'])
 def create_characters():
     data = request.get_json()
+    #handle extra templates
+    extra_templates = data.get("extraTemplates", [])
+    handleExtraTemplates(extra_templates)
     story_objects = data.get("storyObjects", {})
     novel_summary = data.get("novelSummary", {})
     characters = animeBuilder.create_characters(story_objects, novel_summary)
@@ -38,6 +69,9 @@ def create_characters():
 @app.route('/create_chapters', methods=['POST'])
 def create_chapters():
     data = request.get_json()
+    #handle extra templates
+    extra_templates = data.get("extraTemplates", [])
+    handleExtraTemplates(extra_templates)
     story_objects = data.get("storyObjects", {})
     novel_summary = data.get("novelSummary", {})
     characters = data.get("characters", {})
@@ -50,6 +84,9 @@ def create_chapters():
 @app.route('/create_scenes', methods=['POST'])
 def create_scenes():
     data = request.get_json()
+    #handle extra templates
+    extra_templates = data.get("extraTemplates", [])
+    handleExtraTemplates(extra_templates)
     story_objects = data.get("storyObjects", {})
     novel_summary = data.get("novelSummary", {})
     characters = data.get("characters", {})
@@ -67,6 +104,9 @@ movies = {}
 @app.route('/create_movie', methods=['POST'])
 def create_movie():
     data = request.get_json()
+    #handle extra templates
+    extra_templates = data.get("extraTemplates", [])
+    handleExtraTemplates(extra_templates)
     story_objects = data.get("storyObjects", {})
     novel_summary = data.get('novelSummary')
     characters = data.get('characters')
@@ -81,22 +121,22 @@ def create_movie():
         story_objects, novel_summary, characters, chapters, all_scenes, num_chapters, num_scenes,
         aggressive_merging=aggressive_merging,
         portrait_size=portrait_size)
-    movies[movie_id] = MovieGeneratorWrapper(movie_generator,movie_id)
+    movies[movie_id] = MovieGeneratorWrapper(movie_generator, movie_id,args.queueSize)
+    movies
 
     # return jsonify({"movie_id": movie_id})
     return jsonify(movie_id)
 
-import queue
 
 class MovieGeneratorWrapper:
-    def __init__(self, generator, movie_id):
+    def __init__(self, generator, movie_id,queue_size=5):
         self.generator = generator
         self.movie_id = movie_id
         self.current_count = 0
         self.available_count = 0
-        self.queue_size = 5
+        self.queue_size = queue_size
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        
+
         self._queue = queue.Queue(self.queue_size)
         self._fetch_next_element()
 
@@ -106,10 +146,6 @@ class MovieGeneratorWrapper:
     def _get_next_element(self):
         try:
             element = next(self.generator)
-            if "image" in element:
-                fName = getFilename(savePath, "png")
-                element["image"].save(fName)
-                element["image"] = fName
 
             # Add movie_id and count to the element
             element["movie_id"] = self.movie_id
@@ -123,8 +159,9 @@ class MovieGeneratorWrapper:
 
             return element
         except StopIteration:
+            print("RETURNING NONE")
             return None
-        
+
     def _fetch_next_element(self):
         self._executor.submit(self._fetch_and_enqueue_next_element)
 
@@ -140,30 +177,32 @@ class MovieGeneratorWrapper:
         if count is not None:
             self.current_count = count
 
-        current_element = self.movie_elements_table.find_one(movie_id=self.movie_id, count=self.current_count)
-        
+        current_element = self.movie_elements_table.find_one(
+            movie_id=self.movie_id, count=self.current_count)
+
         if current_element is None:
-            found_count=-1
+            found_count = -1
             while found_count < self.current_count:
                 current_element = self._queue.get()
                 if current_element is None:
                     break
-                found_count=current_element["count"]
+                found_count = current_element["count"]
 
         if current_element is not None:
             if self.available_count - self.current_count < self.queue_size:
                 self._fetch_next_element()
 
-            current_element = {k: v for k, v in current_element.items() if v is not None}
+            current_element = {k: v for k,
+                               v in current_element.items() if v is not None}
 
         self.current_count += 1
 
         if current_element is not None:
-            #print("Foo",count,current_element["count"])
+            # print("Foo",count,current_element["count"])
             pass
 
         return current_element
-    
+
 
 # DatabaseMovieGenerator class
 class DatabaseMovieGenerator:
@@ -176,13 +215,14 @@ class DatabaseMovieGenerator:
         if count is not None:
             self.current_count = count
 
-        
-        current_element = self.movie_elements_table.find_one(movie_id=self.movie_id, count=self.current_count)
-        
+        current_element = self.movie_elements_table.find_one(
+            movie_id=self.movie_id, count=self.current_count)
+
         if current_element is None:
             return None
 
-        current_element = {k: v for k, v in current_element.items() if v is not None}
+        current_element = {k: v for k,
+                           v in current_element.items() if v is not None}
 
         self.current_count += 1
 
@@ -196,7 +236,7 @@ def get_next_element(movie_id):
     if movie_generator is None:
         # Check if there's at least one element in the movie_elements_table with movie_id
         element_count = db['movie_elements'].count(movie_id=movie_id)
-        
+
         if element_count == 0:
             return jsonify({"error": "Movie not found"}), 404
 
@@ -206,14 +246,13 @@ def get_next_element(movie_id):
     count = request.args.get('count', None)
     if count is not None:
         count = int(count)
-        print("count",count)
+        print("count", count)
 
     element = movie_generator.get_next_element(count)
     if element is None:
         return jsonify({"done": "No more elements"}), 200
 
     return jsonify(element)
-
 
 
 @app.route('/get_all_movies', methods=['GET'])
@@ -229,11 +268,22 @@ def get_all_movies():
             "title": element["title"],
             "summary": element["summary"],
         }
-        
+
+        # if we can't find an element where dialgue is "THE END", then don't add to this list (only want complted movies)
+        end = db['movie_elements'].find_one(
+            movie_id=element["movie_id"],
+            debug="movie completed successfully"
+        )
+        if end is None:
+            continue
+
+        print(end)
+
         # Find the first element with movie_id where the image field is not null
-        image_elements = db['movie_elements'].find(movie_id=element["movie_id"], image={'notlike': ''})
+        image_elements = db['movie_elements'].find(
+            movie_id=element["movie_id"], image={'notlike': ''})
         image_element = next(iter(image_elements), None)
-        
+
         # Add the image field to movie_info if an element is found
         if image_element:
             movie_info["image"] = image_element["image"]
@@ -242,14 +292,22 @@ def get_all_movies():
 
     return jsonify(movies_list)
 
+
 @app.route('/movies')
 def movie_list():
     return render_template('movie_list.html')
 
+
 @app.route('/movie/<string:movie_id>', methods=['GET'])
 def movie_page(movie_id):
+    #get movie title from db
+    movie_elements = db['movie_elements'].find_one(movie_id=movie_id, debug="new movie")
+    movie_title = movie_elements["title"]
     # Replace 'movie_template.html' with the name of your movie template file
-    return render_template('movie_template.html', movie_id=movie_id)
+    return render_template('movie_template.html', movie_id=movie_id,movie_title=movie_title)
+
+
+
 
 openai.api_key = os.environ['OPENAI_API_KEY']
 
@@ -274,7 +332,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--ntrials', type=int, default=5,
                         help='Number of trials (default: 5)')
-    
+
     parser.add_argument('--numInferenceSteps', type=int, default=15,
                         help='Number of inference steps (default: 15)')
 
@@ -286,10 +344,14 @@ if __name__ == '__main__':
 
     parser.add_argument('--ngrok', action='store_true',
                         help='use ngrok tunnel')
-    
+
     parser.add_argument('--musicDuration', type=int, default=30,
                         help='Duration of background music loop (default: 30)')
     
+    #portraitprompt with a default value of ', anime, face, portrait, headshot, white background'
+    parser.add_argument('--portraitPrompt', type=str, default=', anime, face, portrait, headshot, white background',
+                        help='portrait prompt')
+
     # Add the argument for the list of 4 integers with default values
     parser.add_argument(
         "-s",
@@ -299,6 +361,11 @@ if __name__ == '__main__':
         default=[512, 512, 1024, 1024],
         help="Four integers representing image sizes (default: 512 512 1024 1024)",
     )
+
+
+    #add queue size argument
+    parser.add_argument('--queueSize', type=int, default=30,
+                        help='Queue size (default: 10)')
 
     args = parser.parse_args()
 
@@ -314,10 +381,8 @@ if __name__ == '__main__':
     else:
         portrait_size = 128
 
-
-    #database
+    # database
     db = dataset.connect('sqlite:///movie_elements.db')
-
 
     animeBuilder = AnimeBuilder(num_inference_steps=args.numInferenceSteps,
                                 textModel="GPT3",
@@ -327,6 +392,7 @@ if __name__ == '__main__':
                                 suffix=args.promptSuffix,
                                 musicDuration=args.musicDuration,
                                 imageSizes=args.imageSizes,
+                                portraitPrompt=args.portraitPrompt,
                                 )
 
     if args.extraTemplatesFile:
@@ -342,4 +408,4 @@ if __name__ == '__main__':
     else:
         app.run(debug=True, use_reloader=False)
 
-        #app.run()
+        # app.run()

@@ -173,6 +173,8 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
         if self.verbose:
             print("GPT3 INPUT",textInput)
+
+        #print("about to die",len(textInput))
         
         #call gpt3 api
         completion = openai.Completion.create(
@@ -359,7 +361,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         orig_template=self.orig_template
         if "#NOREP\n" in orig_template:
             lastObject = objects[-1]
-            i=orig_template.index("#NOREP\n")
+            i=orig_template.index("#NOREP\n")+len("#NOREP\n")
             new_template=orig_template[:i]+"\n\n"+lastObject+"\n\n"+orig_template[i:]
 
             #get rid of excess newlines
@@ -369,7 +371,37 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
             #print("orig template is",new_template)
             #print("new template is",new_template)
-            
+
+
+            #I NEED some logic here to prevent the template from growing forever
+            maximumTemplateSize=1024
+            e=0
+            while len(new_template)>maximumTemplateSize:
+                e+=1
+                print("TRIMMING TEMPLATE",self.objectName)
+                #get the part after #NOREP
+                i=new_template.index("#NOREP\n")+len("#NOREP\n")
+                templatebeginning=new_template[:i]
+                templateend=new_template[i:]
+
+                if e>3:
+                    print("ERROR: template too big",self.objectName)
+                    print(new_template,"===",templatebeginning,"===",templateend,"===",objects)
+                    break
+                
+
+
+                #split templateend into objects on ("\n\n")
+                objects=templateend.split("\n\n")
+                #remove a random object
+                objects.pop(random.randint(0,len(objects)-2))
+                #rejoin objects
+                new_template=templatebeginning+"\n\n".join(objects)
+                
+                #get rid of excess newlines
+                new_template=re.sub("\n\n+\n","\n\n",new_template)
+
+            self.templates[self.objectName]=new_template
         
         
         return output

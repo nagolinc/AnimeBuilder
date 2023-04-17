@@ -56,6 +56,9 @@ horse
 
 description:
 cow
+
+description:
+{TEXT}
     
 """,
     "color":"""    

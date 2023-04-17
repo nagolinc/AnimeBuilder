@@ -7,13 +7,316 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto&display=swap" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:wght@800&display=swap" />
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@900&display=swap" rel="stylesheet">
-    <title>{{ movie_title }}</title>
+    <title>Anime Creator</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "../static/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="x-shader/x-vertex" id="vertexshader">
+
+        attribute float scale;
+
+        void main() {
+
+            vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+
+            gl_PointSize = scale * ( 300.0 / - mvPosition.z );
+
+            gl_Position = projectionMatrix * mvPosition;
+
+        }
+
+    </script>
+
+    <script type="x-shader/x-fragment" id="fragmentshader">
+
+        uniform vec3 color;
+
+        void main() {
+
+            if ( length( gl_PointCoord - vec2( 0.5, 0.5 ) ) > 0.475 ) discard;
+
+            gl_FragColor = vec4( 1,1,1, 0 );
+
+        }
+
+    </script>
+
+    <script type="module">
+
+        import * as THREE from 'three';
+
+        let aspect_ratio = screen.width / screen.height;
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(90, aspect_ratio, 0.1, 1000);
+
+        //lighting
+        scene.add(new THREE.HemisphereLight(0x606060, 0x404040));
+
+        const light = new THREE.DirectionalLight(0xffffff);
+        light.position.set(1, 1, 1).normalize();
+        scene.add(light);
+
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(1024 * aspect_ratio, 1024);
+        renderer.domElement.id = 'threeCanvas';
+        document.getElementById("canvasContainer").appendChild(renderer.domElement);
+
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const cube = new THREE.Mesh(geometry, material);
+        //scene.add(cube);
+
+
+
+        //particles
+        let particles, count = 0;
+
+
+        const numParticles = 300;
+
+        const positions = new Float32Array(numParticles * 3);
+        const colors = new Float32Array(numParticles * 3);
+        const scales = new Float32Array(numParticles);
+
+        let i = 0, j = 0;
+
+        for (let iy = 0; iy < numParticles; iy++) {
+            positions[i] = (1-2*Math.random()) * 5 * aspect_ratio // x
+            positions[i + 1] = (1-2*Math.random()) * 5; // y
+            positions[i + 2] = 2 + Math.random() * 3; // z
+            //positions[i + 2] = 0
+            scales[j] = (1 + Math.random()) / 100;
+            i += 3;
+            j++;
+
+            colors[i]=Math.random()
+            colors[i+1]=Math.random()
+            colors[i]=Math.random()
+        }
+        const particle_geometry = new THREE.BufferGeometry();
+        particle_geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particle_geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        particle_geometry.setAttribute('scale', new THREE.BufferAttribute(scales, 1));
+
+        const particle_material = new THREE.ShaderMaterial({
+
+            uniforms: {
+                color: { value: new THREE.Color(0x88ffffff) },
+            },
+            vertexShader: document.getElementById('vertexshader').textContent,
+            fragmentShader: document.getElementById('fragmentshader').textContent
+
+        });
+        //
+        particles = new THREE.Points(particle_geometry, particle_material);
+        scene.add(particles);
+
+
+        camera.position.z = 5;
+
+        //brownian motion
+        let vx = 0.1, vy = 0.1, vz = 0.1;
+        let speedLimit = 0.005
+        let speedLimitZ = 0.002
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+
+            cube.rotation.x += 0.01;
+            cube.rotation.y += 0.01;
+
+            renderer.render(scene, camera);
+
+
+            //camera wanders randomly around the scene
+            camera.position.x += vx;
+            camera.position.y += vy;
+            camera.position.z += vz;
+
+            vx += (1 - 2 * Math.random()) * 0.0001
+            vy += (1 - 2 * Math.random()) * 0.0001
+            vz += (1 - 2 * Math.random()) * 0.0001
+
+            //speed limit
+            let speed = Math.pow(Math.pow(vx, 2) + Math.pow(vy, 2), 0.5)
+            if (speed > speedLimit) {
+                vx = vx * 0.9
+                vy = vy * 0.9
+            }
+
+            if (Math.abs(vz) > speedLimitZ) {
+                vz = vz * 0.9
+            }
+
+            let screen_aspect_ratio = window.innerWidth / window.innerHeight;
+            let image_aspect_ratio = scene.userData["img_aspect_ratio"];
+
+
+            let boundsX = (5 - camera.position.z) * screen_aspect_ratio
+            let boundsY = (5 - camera.position.z) + (5 * screen_aspect_ratio / image_aspect_ratio - 5)-0.2
+            if (screen_aspect_ratio > image_aspect_ratio) {
+                let boundsX = (5 - camera.position.z) * screen_aspect_ratio + (5 * screen_aspect_ratio / image_aspect_ratio - 5)
+                let boundsY = (5 - camera.position.z)
+            }
+
+            let zMin = 3.5
+            let zMax = 5
+
+            //camera.position.z=5
+
+            //console.log(camera.position.z)
+
+
+
+            //bounds
+            if (camera.position.x > boundsX) {
+                camera.position.x = boundsX;
+                vx = -vx * 0.9;
+                //vx=0
+            }
+            if (camera.position.x < -boundsX) {
+                camera.position.x = -boundsX;
+                vx = -vx * 0.9;
+                //vx=0
+            }
+            if (camera.position.y > boundsY) {
+                camera.position.y = boundsY;
+                vy = -vy * 0.9;
+                //vy=0
+            }
+            if (camera.position.y < -boundsY) {
+                camera.position.y = -boundsY;
+                vy = -vy * 0.9;
+                //vy=0
+            }
+
+            //camera.position.z=5
+            if (camera.position.z > zMax) {
+                camera.position.z = zMax;
+                vz = -vz;
+                //vz=0
+            }
+            if (camera.position.z < zMin) {
+                camera.position.z = zMin;
+                vz = -vz;
+            }
+
+            /*camera.position.z=5
+            camera.position.x=0
+            camera.position.y=0*/
+
+
+            //update particles
+            const positions = particles.geometry.attributes.position.array;
+            const scales = particles.geometry.attributes.scale.array;
+
+            let i = 0, j = 0;
+
+            let snowSpeed = 0.001
+            let gravity = 0.001
+
+            for (let iy = 0; iy < numParticles; iy++) {
+
+                positions[i] = positions[i] + (1-2*Math.random()) * snowSpeed
+                positions[i + 1] = positions[i + 1] + (1-2*Math.random()) * snowSpeed - gravity
+                if (positions[i + 1] < - 5) {
+                    positions[i] = (1 - 2 * Math.random()) * 5
+                    positions[i + 1] = 5
+                    positions[i + 2] = 2 + Math.random() * 3; // z
+                }
+
+
+                //scales[j] = (Math.sin((ix + count) * 0.3) + 1) * 20 +
+                //    (Math.sin((iy + count) * 0.5) + 1) * 20;
+
+                i += 3;
+                j++;
+
+
+
+            }
+
+            particles.geometry.attributes.position.needsUpdate = true;
+            particles.geometry.attributes.scale.needsUpdate = true;
+
+        }
+
+        animate();
+
+        function addObject(imgPath, dPath, width, height) {
+
+            //remove previous image if exists
+            if ("img" in scene.userData) {
+                scene.remove(scene.userData["img"]);
+            }
+
+            const textureLoader = new THREE.TextureLoader();
+            const colorMap = textureLoader.load(imgPath);
+            const displacementMap = textureLoader.load(dPath);
+
+            let displacementBias = 0
+            let displacementScale = 1
+
+            let material = new THREE.MeshStandardMaterial({
+                map: colorMap,
+                displacementMap: displacementMap,
+                displacementScale: displacementScale,
+                displacementBias: displacementBias, // from original model
+                side: THREE.DoubleSide
+            });
+
+            let image_aspect_ratio = width / height;
+            let screen_aspect_ratio = window.innerWidth / window.innerHeight;
+
+            let geometry = new THREE.PlaneGeometry(10 * screen_aspect_ratio, 10 * screen_aspect_ratio / image_aspect_ratio, 1000, 1000);
+
+            let mesh = new THREE.Mesh(geometry, material);
+
+            console.log(mesh)
+
+            scene.add(mesh);
+
+            scene.userData["img"] = mesh;
+            //store image aspect ratio
+            scene.userData["img_aspect_ratio"] = image_aspect_ratio;
+
+            //randomize camera position
+            camera.position.z = 3 + Math.random() * 2
+            let boundsX = (5 - camera.position.z) * screen_aspect_ratio + 0.1
+            let boundsY = (5 - camera.position.z) + (5 * screen_aspect_ratio / image_aspect_ratio - 5) + 0.1
+            camera.position.x = (1 - 2 * Math.random()) * boundsX
+            camera.position.y = (1 - 2 * Math.random()) * boundsY
+            vx = speedLimit * (1 - 2 * Math.random())
+            vy = speedLimit * (1 - 2 * Math.random())
+            vz = speedLimit * (1 - 2 * Math.random())
+
+
+        }
+
+        //expose to global scope
+        window.addObject = addObject;
+
+    </script>
+
+
+
+
+
     <script>
 
-        console.log("here0")
+        function submitForm(event, formId, url, resultId, inputToUpdate = null, successCallback = null, resultMapping = null) {
 
-        function submitForm(event, formId, url, resultId, inputToUpdate = null, successCallback = null) {
+
+
             if (event) {
                 event.preventDefault();
             }
@@ -30,9 +333,35 @@
                     data: JSON.stringify(formData),
                     contentType: 'application/json',
                     success: function (data) {
-                        $(`#${resultId}`).text(data);
-                        if (inputToUpdate) {
-                            $(`#${inputToUpdate}`).val(data);
+
+                        $(`#${inputToUpdate}`).val("this should enver happen" + JSON.stringify(data) + JSON.stringify(resultMapping));
+
+
+                        if (resultMapping != null) {
+
+                            //$(`#${inputToUpdate}`).val("this should never never happen"+JSON.stringify(resultMapping[key])+JSON.stringify(data[key]));
+
+                            console.log("here")
+                            for (let key in resultMapping) {
+
+                                //$(`#${inputToUpdate}`).val("this should key happen"+key+JSON.stringify(resultMapping[key])+JSON.stringify(data[key]));
+
+                                console.log(key, resultMapping[key])
+                                $(`${resultMapping[key]}`).val(data[key])
+                            }
+                            data = resultMapping[data]
+
+
+
+
+
+                        } else {
+
+                            $(`#${resultId}`).text(data);
+                            if (inputToUpdate) {
+                                $(`#${inputToUpdate}`).val(data);
+                            }
+
                         }
 
                         if (successCallback) {
@@ -51,10 +380,10 @@
 
         function updateHiddenNovelSummary() {
 
-            $('#characters-form #hidden-storyObjects').val($('#summary-form #storyObjects').val());
-            $('#chapters-form #hidden-storyObjects').val($('#summary-form #storyObjects').val());
-            $('#scenes-form #hidden-storyObjects').val($('#summary-form #storyObjects').val());
-            $('#movie-form #hidden-storyObjects').val($('#summary-form #storyObjects').val());
+            $('#characters-form #hidden-storyObjects').val($('#summary-form #hidden-storyObjects').val());
+            $('#chapters-form #hidden-storyObjects').val($('#summary-form #hidden-storyObjects').val());
+            $('#scenes-form #hidden-storyObjects').val($('#summary-form #hidden-storyObjects').val());
+            $('#movie-form #hidden-storyObjects').val($('#summary-form #hidden-storyObjects').val());
 
             $('#chapters-form #hidden-novelSummary').val($('#characters-form #novelSummary').val());
             $('#chapters-form #hidden-novelSummary').val($('#characters-form #novelSummary').val());
@@ -69,18 +398,24 @@
             $('#movie-form #hidden-chapters').val($('#scenes-form #chapters').val());
             $('#movie-form #hidden-numScenes').val($('#scenes-form #numScenes').val());
 
+            //update extraTemplates field in each form
+            $('#characters-form #hidden-extraTemplates').val($('#summary-form #extraTemplates').val());
+            $('#chapters-form #hidden-extraTemplates').val($('#summary-form #extraTemplates').val());
+            $('#scenes-form #hidden-extraTemplates').val($('#summary-form #extraTemplates').val());
+            $('#movie-form #hidden-extraTemplates').val($('#summary-form #extraTemplates').val());
+
         }
 
         var backgroundMusic = null
         var playbackStopped = false
         let isWaitingForResponse = false;
 
-        function loadImage(src) {
+        function loadImage(src, width, height) {
 
-            src = "../" + src
-
-            console.log("about to die", src)
-
+            //replace ".png with _depth.png" in src
+            let dSrc = src.replace(".png", "_depth.png")
+            console.log(dSrc)
+            addObject(src, dSrc, width, height)
 
             console.log("loaded img", src)
 
@@ -95,9 +430,6 @@
                 image.onerror = () => reject(new Error(`Failed to load image: ${src}`));
             });
         }
-
-
-
 
         function playMovie(movieId, count) {
 
@@ -134,7 +466,6 @@
                             $("#whichChapter").val(data["chapter"])
                             $("#whichScene").val(data["scene"])
                         }
-
                         //just keep going
                         isWaitingForResponse = false;
                         playMovie(movieId, count + 1)
@@ -149,8 +480,17 @@
                         const ctx = canvas.getContext('2d');
 
                         // Load the image using the loadImage function
-                        console.log("loading image", data["image"])
-                        loadImage("../"+data['image'])
+                        console.log("loading image", "../" + data["image"])
+                        let width = data["width"]
+                        let height = data["height"]
+                        //if null set to 1024
+                        if (width == null) {
+                            width = 1024
+                        }
+                        if (height == null) {
+                            height = 1024
+                        }
+                        loadImage(data['image'], width, height)
                             .then((image) => {
                                 // Draw the image on the canvas using the drawImage method
                                 ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -179,11 +519,12 @@
                         //#audio.play();
 
                         let canvas = document.getElementById('myCanvas');
+                        let threecanvas = document.getElementById('threeCanvas');
 
                         var video = document.getElementById("my-video");
                         //display movie element
                         video.controls = false;
-                        var video_src = "../"+data['speech']
+                        var video_src = "../" + data['speech']
                         video.setAttribute('autoplay', '');
                         //video.setAttribute('controls', '');
                         video.src = video_src;
@@ -195,14 +536,19 @@
                             //different if fullscreen
                             if (document.fullscreenElement) {
                                 let scale = canvas.width / 1024
-                                w = 256 * scale
-                                video.width = scale * 256;
-                                video.height = scale * 256;
+                                w = 512 * scale
+                                video.width = scale * 512;
+                                video.height = scale * 512;
+
+                                video.style.left = (window.innerWidth - w) + 'px';
                             } else {
                                 video.width = 256;
                                 video.height = 256;
+                                video.style.left = (threecanvas.offsetLeft + threecanvas.width - w) + 'px';
                             }
-                            video.style.left = (canvas.offsetLeft + canvas.width - w) + 'px';
+                            //video.style.left = (canvas.offsetLeft + canvas.width - w) + 'px';
+                            //move video to right of screen
+
                         });
 
 
@@ -227,7 +573,7 @@
 
                     else if ('music' in data) {
 
-                        var audio = new Audio("../"+data['music']);
+                        var audio = new Audio("../" + data['music']);
                         audio.loop = true;
                         audio.play();
 
@@ -243,7 +589,7 @@
 
                     else if ('sound effect' in data) {
 
-                        var audio = new Audio("../"+data['sound effect']);
+                        var audio = new Audio("../" + data['sound effect']);
                         audio.play();
 
                         $('#caption').text("Sound Effect:" + data['description']);
@@ -278,11 +624,10 @@
             });
         }
 
-
         function updateCaptionWithMovieTitle() {
             const novelSummary = $('#characters-form #novelSummary').val()
             const summaryLines = novelSummary.split('\n');
-            let movieTitle = "{{ movie_title }}";
+            let movieTitle = 'Worst Anime Ever';
             for (let i = 0; i < summaryLines.length - 1; i++) {
                 if (summaryLines[i].toLowerCase().trim() === 'title:') {
                     movieTitle = summaryLines[i + 1];
@@ -294,13 +639,14 @@
             //draw logo
             const canvas = document.getElementById("myCanvas");
             const ctx = canvas.getContext("2d");
+            addObject("./static/logo.png", null, 1024, 1024)
 
             // Clear the canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Draw the logo
             const logo = new Image();
-            logo.src = "../static/logo.png"; // Replace with the actual path to your logo file
+            logo.src = "./static/logo.png"; // Replace with the actual path to your logo file
             logo.onload = function () {
                 ctx.drawImage(logo, 0, 0, canvas.width, canvas.height);
             };
@@ -318,7 +664,9 @@
 
                 try {
                     // Step 1: Create Summary
-                    await submitForm(null, 'summary-form', '/create_summary', 'summary-result', 'characters-form #novelSummary');
+                    await submitForm(null, 'summary-form', '/create_summary', 'summary-result', 'characters-form #novelSummary', updateHiddenNovelSummary,
+                        { "novel_summary": "#characters-form #novelSummary", "story_objects": "#summary-form #hidden-storyObjects" }
+                    );
 
                     // Step 2: Create Characters
                     await submitForm(null, 'characters-form', '/create_characters', 'characters-result', 'chapters-form #characters', updateHiddenNovelSummary);
@@ -330,7 +678,7 @@
                     await submitForm(null, 'scenes-form', '/create_scenes', 'scenes-result', 'movie-form #scenes', updateHiddenNovelSummary);
 
                     // Step 5: Create Movie
-                    await submitForm(null, 'movie-form', '/create_movie', 'movie-result', 'movie-result-field');
+                    await submitForm(null, 'movie-form', '/create_movie', 'movie-result', 'movie-result-field', updateHiddenNovelSummary);
                 } catch (error) {
                     stepFailed = true
                 }
@@ -346,13 +694,9 @@
 
 
         $(document).ready(function () {
-
-            let movie_id = "{{ movie_id }}"
-            $("#movie-result-field").val(movie_id)
-
-
             $('#summary-form').submit(function (event) {
-                submitForm(event, 'summary-form', '/create_summary', 'summary-result', 'characters-form #novelSummary');
+                submitForm(event, 'summary-form', '/create_summary', 'summary-result', 'characters-form #novelSummary', updateHiddenNovelSummary,
+                    { "novel_summary": "#characters-form #novelSummary", "story_objects": "#summary-form #hidden-storyObjects" });
             });
 
             $('#characters-form').submit(function (event) {
@@ -379,13 +723,6 @@
 
                 playbackStopped = false
 
-                updateCaptionWithMovieTitle();
-
-                //const movieId = "your_movie_id"; // Replace with the actual movie ID
-                const movieId = $('#movie-result-field').val();
-                const whichChapter = $('#whichChapter').val();
-                const whichScene = $('#whichScene').val();
-                let count = 0
 
                 //draw logo on canvas
                 const canvas = document.getElementById("myCanvas");
@@ -400,16 +737,21 @@
                     ctx.drawImage(logo, 0, 0, canvas.width, canvas.height);
                 };
 
+                updateCaptionWithMovieTitle();
 
+                //const movieId = "your_movie_id"; // Replace with the actual movie ID
+                const movieId = $('#movie-result-field').val();
+                const whichChapter = $('#whichChapter').val();
+                const whichScene = $('#whichScene').val();
+                let count = 0
                 setTimeout(function () {
                     playMovie(movieId, count);
-                }, 10000);
-
+                }, 10 * 1000);
             });
 
             $('#stopMovie').click(function () {
                 //hide all of the forms
-                //$('#hideForms').show();
+                $('#hideForms').show();
 
                 playbackStopped = true
 
@@ -418,17 +760,34 @@
                 }
             });
 
-            $('#characters-form #novelSummary').on('input', function () {
+            $('#characters-form #novelSummary').on('change', function () {
                 updateHiddenNovelSummary();
             });
 
-            $('#chapters-form #novelSummary').on('input', function () {
+            $('#chapters-form #characters').on('change', function () {
                 updateHiddenNovelSummary();
             });
 
-            $('#scenes-form #novelSummary').on('input', function () {
+            $('#scenes-form #chapters').on('change', function () {
                 updateHiddenNovelSummary();
             });
+
+            $('#movie-form #scenes').on('change', function () {
+                updateHiddenNovelSummary();
+            });
+
+            //when story summary is changed, update the hidden field
+            $('#summary-form #storyObjects').on('change', function () {
+                $('#summary-form #hidden-storyObjects').val($('#summary-form #storyObjects').val());
+                updateHiddenNovelSummary();
+            });
+
+            //when extratemplates are changed, update the hidden field
+            $('#summary-form #extraTemplates').on('change', function () {
+                updateHiddenNovelSummary();
+            });
+
+
 
             updateHiddenNovelSummary();
 
@@ -438,6 +797,8 @@
                 let caption = document.getElementById('caption');
                 let canvas = document.getElementById('myCanvas');
 
+                let aspect_ratio = window.innerWidth / window.innerHeight;
+
                 if (document.fullscreenElement) {
                     let minDimension = Math.min(screen.width, screen.height);
                     caption.style.fontSize = (30 * (minDimension / 1024)) + 'px';
@@ -446,6 +807,26 @@
                     caption.style.position = 'fixed';
                     caption.style.bottom = '10px';
                     caption.style.left = (canvas.offsetLeft) + 'px';
+
+
+                    //set video position
+                    let video = document.getElementById('my-video');
+                    let scale = minDimension / 1024;
+                    let w = 256 * scale;
+                    video.width = scale * 256;
+                    video.height = scale * 256;
+                    video.style.left = (canvas.offsetLeft + canvas.width - w) + 'px';
+
+                    //update threecanvas
+                    let threeCanvas = document.getElementById('threeCanvas');
+                    threeCanvas.style.width = (minDimension * aspect_ratio) + 'px';
+                    threeCanvas.style.height = (minDimension) + 'px';
+                    //threeCanvas.style.left = (canvas.offsetLeft) + 'px';
+                    threeCanvas.style.left = 0 + 'px';
+                    threeCanvas.style.top = (canvas.offsetTop) + 'px';
+
+
+
                 } else {
                     caption.style.fontSize = '30px';
                     caption.style.width = 'calc(1024px - 256px)';
@@ -453,6 +834,24 @@
                     caption.style.position = 'absolute';
                     caption.style.bottom = '10px';
                     caption.style.left = '0';
+
+                    //set video position
+                    let video = document.getElementById('my-video');
+                    let scale = 1
+                    let w = 256;
+                    video.width = 256;
+                    video.height = 256;
+                    video.style.left = (canvas.offsetLeft + canvas.width - w) + 'px';
+
+                    //update threecanvas
+                    let threeCanvas = document.getElementById('threeCanvas');
+                    threeCanvas.style.width = (1024 * aspect_ratio) + 'px';
+                    threeCanvas.style.height = (1024) + 'px';
+                    threeCanvas.style.left = (canvas.offsetLeft) + 'px';
+                    //threeCanvas.style.left = (0) + 'px';
+                    threeCanvas.style.top = (canvas.offsetTop) + 'px';
+
+
                 }
             }
 
@@ -499,6 +898,10 @@
                     let minDimension = Math.min(screen.width, screen.height);
                     canvas.width = minDimension;
                     canvas.height = minDimension;
+
+
+
+
                 } else {
                     canvas.width = 1024;
                     canvas.height = 1024;
@@ -545,6 +948,11 @@
                 toggleFullscreen()
             });
 
+            //generate all button calls autoplay
+            $('#generateAll').click(function () {
+                doAutoplay()
+            });
+
         });
     </script>
 
@@ -577,12 +985,26 @@
             right: 256px;
             /* Updated right */
             text-align: center;
+
+            z-index: 3;
         }
+
 
         .video {
             position: absolute;
             bottom: 0px;
             right: 256px;
+
+            z-index: 2;
+        }
+
+        #threeCanvas {
+            position: absolute;
+            bottom: 0px;
+            left: 0px;
+
+            z-index: 1;
+
         }
     </style>
 
@@ -592,25 +1014,56 @@
 <body>
     <h1>Anime Creator</h1>
 
-    <div id="hideForms" style="display: none;">
+    <div id="hideForms">
 
         <h2>Step 1: Create Summary</h2>
 
-        Hint: you can put suggestions for the generator here.<br>
-        <pre>
+
+
+        <button id="generateAll">Generate All</button>
+        <br>
+
+        <form id="summary-form">
+
+            Hint: you can define extra objects here.<br>
+            <pre>
+>object type 1
+description:
+this object has a desription like this
+===
+>object type 2
+description:
+this {animal} is a particular {color}
+            </pre>
+
+
+
+            <label for="extraTemplates">Extra Templates:</label><br>
+            <textarea id="extraTemplates" name="extraTemplates" rows="32" cols="150"></textarea>
+            <br>
+            
+            
+            Hint: you can put suggestions for the generator here.<br>
+            <pre>
 novel suggestion:
 a story about bees
 prompt suffix:
 this text is added to the end of every image prompt
 character type:
 zombie
-        </pre>
-        <form id="summary-form">
+prompt object:
+zombie object
+scene prompt:
+, Make sure to include lots of action involving tentacles!
+            </pre>
+            
+            
             <label for="storyObjects">Story Objects:</label>
             <br>
-            <textarea id="storyObjects" name="storyObjects" rows="32" cols="200"></textarea>
+            <textarea id="storyObjects" name="storyObjects" rows="32" cols="150"></textarea>
             <br>
             <button type="submit">Create Summary</button>
+            <input type="hidden" id="hidden-storyObjects" name="hidden-storyObjects" val="">
         </form>
         <pre id="summary-result" style="display:none"></pre>
 
@@ -618,9 +1071,10 @@ zombie
         <form id="characters-form">
             <label for="novelSummary">Novel Summary:</label>
             <br>
-            <textarea id="novelSummary" name="novelSummary" rows="32" cols="200"></textarea>
+            <textarea id="novelSummary" name="novelSummary" rows="32" cols="150"></textarea>
             <br>
             <input type="hidden" id="hidden-storyObjects" name="storyObjects">
+            <input type="hidden" id="hidden-extraTemplates" name="extraTemplates">
             <button type="submit">Create Characters</button>
         </form>
         <pre id="characters-result" style="display:none"></pre>
@@ -632,10 +1086,11 @@ zombie
             <br>
             <label for="characters">Characters:</label>
             <br>
-            <textarea id="characters" name="characters" rows="32" cols="200"></textarea>
+            <textarea id="characters" name="characters" rows="32" cols="150"></textarea>
             <br>
             <input type="hidden" id="hidden-storyObjects" name="storyObjects">
             <input type="hidden" id="hidden-novelSummary" name="novelSummary">
+            <input type="hidden" id="hidden-extraTemplates" name="extraTemplates">
             <button type="submit">Create Chapters</button>
         </form>
         <pre id="chapters-result" style="display:none"></pre>
@@ -647,12 +1102,13 @@ zombie
             <br>
             <label for="chapters">Chapters:</label>
             <br>
-            <textarea id="chapters" name="chapters" rows="32" cols="200"></textarea>
+            <textarea id="chapters" name="chapters" rows="32" cols="150"></textarea>
             <br>
             <input type="hidden" id="hidden-storyObjects" name="storyObjects">
             <input type="hidden" id="hidden-novelSummary" name="novelSummary">
             <input type="hidden" id="hidden-characters" name="characters">
             <input type="hidden" id="hidden-numChapters" name="numChapters">
+            <input type="hidden" id="hidden-extraTemplates" name="extraTemplates">
             <button type="submit">Create Scenes</button>
         </form>
         <pre id="scenes-result" style="display:none"></pre>
@@ -665,10 +1121,10 @@ zombie
             <input type="hidden" id="hidden-numChapters" name="numChapters">
             <input type="hidden" id="hidden-chapters" name="chapters">
             <input type="hidden" id="hidden-numScenes" name="numScenes">
-
+            <input type="hidden" id="hidden-extraTemplates" name="extraTemplates">
             <label for="scenes">Scenes:</label>
             <br>
-            <textarea id="scenes" name="scenes" rows="32" cols="200"></textarea>
+            <textarea id="scenes" name="scenes" rows="32" cols="150"></textarea>
             <br>
 
             <button type="submit">Create Movie</button>
@@ -691,8 +1147,8 @@ zombie
 
     <br>
 
-    <div class="container">
+    <div class="container" id="canvasContainer">
         <canvas id="myCanvas" width="1024" height="1024"></canvas>
-        <span class="caption" id="caption">{{ movie_title }}</span>
+        <span class="caption" id="caption">Once Upon a Time</span>
         <video class="video" id="my-video" src="path/to/my/video.mp4" style="display:None"></video>
     </div>
