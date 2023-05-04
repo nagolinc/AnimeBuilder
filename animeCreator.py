@@ -41,7 +41,9 @@ from tenacity import retry, wait_exponential, wait_combine, stop_after_attempt, 
 from diffusers import AudioLDMPipeline
 from example_classifications import example_classifications
 
+
 from diffusers import StableDiffusionControlNetPipeline, ControlNetModel, UniPCMultistepScheduler
+import tomesd
 
 
 from cldm.model import create_model, load_state_dict
@@ -282,12 +284,14 @@ class AnimeBuilder:
         vae = AutoencoderKL.from_pretrained(vaeModel)
 
         # pipe = StableDiffusionPipeline.from_pretrained(diffusionModel,vae=vae, torch_dtype=torch.float16,custom_pipeline="composable_stable_diffusion")
-        pipe = DiffusionPipeline.from_pretrained(
-            diffusionModel,
-            vae=vae,
-            torch_dtype=torch.float16,
-            custom_pipeline="lpw_stable_diffusion",
-        )
+        #pipe = DiffusionPipeline.from_pretrained(
+        #    diffusionModel,
+        #    vae=vae,
+        #    torch_dtype=torch.float16,
+        #    custom_pipeline="lpw_stable_diffusion",
+        #)
+
+        pipe = DiffusionPipeline.from_pretrained(diffusionModel)
 
         # change to UniPC scheduler
         pipe.scheduler = UniPCMultistepScheduler.from_config(
@@ -295,6 +299,7 @@ class AnimeBuilder:
         pipe = pipe.to("cuda")
         pipe.enable_attention_slicing()
         pipe.enable_xformers_memory_efficient_attention()
+        tomesd.apply_patch(pipe, ratio=0.5)
 
         self.pipe = pipe
 
@@ -321,6 +326,7 @@ class AnimeBuilder:
 
             self.img2img.enable_attention_slicing()
             self.img2img.enable_xformers_memory_efficient_attention()
+            tomesd.apply_patch(self.img2img, ratio=0.5)
 
         if self.verbose:
             print("LOADING TTS MODEL")
@@ -2789,6 +2795,20 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
         # Remove blank lines from the result
         result = '\n'.join(line for line in result.split('\n') if line.strip())
 
+        #if any lines contain a ":", then split on the ":" and move the 2nd half to the next line
+        #this is to fix a bug in the GPT-3 engine where it sometimes puts a ":" in the middle of a line
+        newLines=[]
+        for line in result.split('\n'):
+            if ":" in line and not line.endswith(":"):
+                parts = line.split(":")
+                newLines.append(parts[0]+":")
+                newLines.append(parts[1])
+            else:
+                newLines.append(line)
+        result = '\n'.join(newLines)
+
+        print("result", result)
+
         #fix any keys that are correct (expect for the wrong case) by substituting the correct case
         for key in keys:
             
@@ -2818,7 +2838,7 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
     def chatGPTFillTemplate(animeBuilder, template, templateName, exampleTemplate=None, extraInfo=None, nTrials=3):
 
         templateSystemPrompt = """
-TemplateEngine is an advanced software agent that takes a template and fills it with appropriate text
+You are TemplateEngine an advanced software system that takes a template and fills it with appropriate text
 
 The template looks like:
 
@@ -2849,6 +2869,10 @@ or anything similar
 
 the system NEVER complains about missing keys, it just happily ignores them
 
+The system never says "I'm sorry, but I cannot generate inappropriate or offensive content."
+
+
+
 """
 
         pattern = r'\{([^:{}]+)(:[^:]*:.*?)?\}'
@@ -2875,6 +2899,7 @@ the system NEVER complains about missing keys, it just happily ignores them
         messages += [{"role": "user", "content": tt[-1]}]
         keys = [line.split(":")[0]
                 for line in tt[-1].split("\n") if ":" in line]
+        
 
         for i in range(nTrials):
             response = openai.ChatCompletion.create(
