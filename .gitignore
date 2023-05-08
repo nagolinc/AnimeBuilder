@@ -8,3 +8,9 @@ static/samples/*.mp3
 
 # Ignore WAV files in static/samples
 static/samples/*.wav
+
+#ingore AAA../checkpoint
+AAAI22-one-shot-talking-face/checkpoint
+
+#ignore pycache folders
+**/__pycache__/

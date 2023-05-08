@@ -590,17 +590,17 @@ class AnimeBuilder:
                 rgb_img.save(jpg_path)
                 image_path = jpg_path
 
-            osth_path = '..\AAAI22-one-shot-talking-face'
+            osth_path = '.\AAAI22-one-shot-talking-face'
 
             os.makedirs(save_dir,exist_ok=True)
-            phoneme = processAudio(audio_file_path,phindex_location="..\AAAI22-one-shot-talking-face\phindex.json")
+            phoneme = processAudio(audio_file_path,phindex_location=".\AAAI22-one-shot-talking-face\phindex.json")
 
             
             #supress printing
             with open(os.devnull, "w") as f, contextlib.redirect_stdout(f):
                 mov=test_with_input_audio_and_image(image_path,audio_file_path,phoneme,
-                                "..\\AAAI22-one-shot-talking-face\\checkpoint\\generator.ckpt",
-                                "..\\AAAI22-one-shot-talking-face\\checkpoint\\audio2pose.ckpt",
+                                ".\\AAAI22-one-shot-talking-face\\checkpoint\\generator.ckpt",
+                                ".\\AAAI22-one-shot-talking-face\\checkpoint\\audio2pose.ckpt",
                                 save_dir,osth_path)
             
             print(mov)
