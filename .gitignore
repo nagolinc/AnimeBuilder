@@ -14,3 +14,9 @@ AAAI22-one-shot-talking-face/checkpoint
 
 #ignore pycache folders
 **/__pycache__/
+
+#ignore .ipynb files
+*.ipynb
+
+#ignore any file that starts with "customTemplate_"
+customTemplate_*

@@ -368,7 +368,7 @@ if __name__ == '__main__':
 
 
     #add queue size argument
-    parser.add_argument('--queueSize', type=int, default=30,
+    parser.add_argument('--queueSize', type=int, default=10,
                         help='Queue size (default: 10)')
     
     #add useGPTForChatCompletion argument
@@ -407,7 +407,9 @@ if __name__ == '__main__':
                                 )
     
 
-    animeBuilder.doGen("test"*100)
+    print("DOING GEN")
+    animeBuilder.doGen("test"*100,num_inference_steps=args.numInferenceSteps)
+    print("DONE GEN")
 
     if args.extraTemplatesFile:
         with open(args.extraTemplatesFile, "r") as file:

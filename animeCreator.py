@@ -17,8 +17,10 @@ import pits.app as pits
 
 import traceback
 
+
 from diffusers.models import AutoencoderKL
 from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler, StableDiffusionImg2ImgPipeline, UniPCMultistepScheduler, DiffusionPipeline
+from diffusers import StableDiffusionXLPipeline, AutoencoderTiny, StableDiffusionXLImg2ImgPipeline
 import time
 from torch import autocast
 import ipywidgets as widgets
@@ -46,8 +48,8 @@ from diffusers import StableDiffusionControlNetPipeline, ControlNetModel, UniPCM
 import tomesd
 
 
-#from cldm.model import create_model, load_state_dict
-#from cldm.ddim_hacked import DDIMSampler
+# from cldm.model import create_model, load_state_dict
+# from cldm.ddim_hacked import DDIMSampler
 from laion_face_common import generate_annotation
 
 import subprocess
@@ -167,7 +169,7 @@ class AnimeBuilder:
 
         self.parallel_screenplays = parallel_screenplays
 
-        #always use parallen when using chatgpt
+        # always use parallen when using chatgpt
         if use_gpt_for_chat_completion:
             self.parallel_screenplays = True
 
@@ -243,7 +245,7 @@ class AnimeBuilder:
                 audioLDM, torch_dtype=torch.float16)
             self.audioLDMPipe = self.audioLDMPipe.to("cuda")
 
-        #move to cpu if saving memory
+        # move to cpu if saving memory
         if self.saveMemory:
             self.audioLDMPipe = self.audioLDMPipe.to("cpu")
 
@@ -307,9 +309,8 @@ class AnimeBuilder:
         if self.verbose:
             print("LOADING IMAGE MODEL")
 
-        
         # make sure you're logged in with `huggingface-cli login`
-        #vae = AutoencoderKL.from_pretrained(vaeModel) #maybe I should enable this again?
+        # vae = AutoencoderKL.from_pretrained(vaeModel) #maybe I should enable this again?
 
         # pipe = StableDiffusionPipeline.from_pretrained(diffusionModel,vae=vae, torch_dtype=torch.float16,custom_pipeline="composable_stable_diffusion")
         # pipe = DiffusionPipeline.from_pretrained(
@@ -319,31 +320,39 @@ class AnimeBuilder:
         #    custom_pipeline="lpw_stable_diffusion",
         # )
 
-        #pipe = DiffusionPipeline.from_pretrained(diffusionModel)
-        # check if model_id is a .ckpt or .safetensors file
-        if diffusionModel.endswith(".ckpt") or diffusionModel.endswith(".safetensors"):
-            print("about to die", diffusionModel)
-            pipe = StableDiffusionPipeline.from_single_file(diffusionModel,
-                                                    torch_dtype=torch.float16)
+        if "XL" in diffusionModel:
+            pipe = StableDiffusionXLPipeline.from_single_file(
+                diffusionModel, torch_dtype=torch.float16, use_safetensors=True
+            )
+            pipe.vae = AutoencoderTiny.from_pretrained(
+                "madebyollin/taesdxl", torch_dtype=torch.float16)
         else:
-            pipe = StableDiffusionPipeline.from_pretrained(
-                diffusionModel, torch_dtype=torch.float16)
 
-        # change to UniPC scheduler
-        pipe.scheduler = UniPCMultistepScheduler.from_config(
-            pipe.scheduler.config)
-        pipe = pipe.to("cuda")
-        pipe.enable_attention_slicing()
-        pipe.enable_xformers_memory_efficient_attention()
-        tomesd.apply_patch(pipe, ratio=0.5)
+            # pipe = DiffusionPipeline.from_pretrained(diffusionModel)
+            # check if model_id is a .ckpt or .safetensors file
+            if diffusionModel.endswith(".ckpt") or diffusionModel.endswith(".safetensors"):
+                print("about to die", diffusionModel)
+                pipe = StableDiffusionPipeline.from_single_file(diffusionModel,
+                                                                torch_dtype=torch.float16)
+            else:
+                pipe = StableDiffusionPipeline.from_pretrained(
+                    diffusionModel, torch_dtype=torch.float16)
+
+            # change to UniPC scheduler
+            pipe.scheduler = UniPCMultistepScheduler.from_config(
+                pipe.scheduler.config)
+            pipe = pipe.to("cuda")
+            pipe.enable_attention_slicing()
+            pipe.enable_xformers_memory_efficient_attention()
+            tomesd.apply_patch(pipe, ratio=0.5)
 
         self.pipe = pipe
 
-        #if save memory, move pipe to cpu and do garbage collection
+        # if save memory, move pipe to cpu and do garbage collection
         if self.saveMemory:
             self.pipe = self.pipe.to("cpu")
             gc.collect()
-            #collect cuda memory
+            # collect cuda memory
             torch.cuda.empty_cache()
 
         self.pipe.safety_checker = None
@@ -354,34 +363,44 @@ class AnimeBuilder:
             if self.verbose:
                 print("LOADING Img2Img")
 
-            if diffusionModel.endswith(".ckpt") or diffusionModel.endswith(".safetensors"):
-                thisModelName="runwayml/stable-diffusion-v1-5"
+            if "XL" in diffusionModel:
+                img2img = StableDiffusionXLImg2ImgPipeline.from_single_file(
+                    diffusionModel, torch_dtype=torch.float16, use_safetensors=True)
+                # img2img.vae = AutoencoderTiny.from_pretrained("madebyollin/taesdxl", torch_dtype=torch.float16)
+                img2img.enable_vae_tiling()
+
+                self.img2img = img2img
+            
             else:
-                thisModelName=diffusionModel
 
-            self.img2img = StableDiffusionImg2ImgPipeline.from_pretrained(
-                thisModelName,
-                # revision=revision,
-                scheduler=self.pipe.scheduler,
-                unet=self.pipe.unet,
-                vae=self.pipe.vae,
-                safety_checker=self.pipe.safety_checker,
-                text_encoder=self.pipe.text_encoder,
-                tokenizer=self.pipe.tokenizer,
-                torch_dtype=torch.float16,
-                use_auth_token=True,
-                cache_dir="./AI/StableDiffusion"
-            )
+                if diffusionModel.endswith(".ckpt") or diffusionModel.endswith(".safetensors"):
+                    thisModelName = "runwayml/stable-diffusion-v1-5"
+                else:
+                    thisModelName = diffusionModel
 
-            self.img2img.enable_attention_slicing()
-            self.img2img.enable_xformers_memory_efficient_attention()
-            tomesd.apply_patch(self.img2img, ratio=0.5)
+                self.img2img = StableDiffusionImg2ImgPipeline.from_pretrained(
+                    thisModelName,
+                    # revision=revision,
+                    scheduler=self.pipe.scheduler,
+                    unet=self.pipe.unet,
+                    vae=self.pipe.vae,
+                    safety_checker=self.pipe.safety_checker,
+                    text_encoder=self.pipe.text_encoder,
+                    tokenizer=self.pipe.tokenizer,
+                    torch_dtype=torch.float16,
+                    use_auth_token=True,
+                    cache_dir="./AI/StableDiffusion"
+                )
 
-            #if save memmory, move to cpu and do garbage collection
+                self.img2img.enable_attention_slicing()
+                self.img2img.enable_xformers_memory_efficient_attention()
+                tomesd.apply_patch(self.img2img, ratio=0.5)
+
+            # if save memmory, move to cpu and do garbage collection
             if self.saveMemory:
                 self.img2img = self.img2img.to("cpu")
                 gc.collect()
-                #collect cuda memory
+                # collect cuda memory
                 torch.cuda.empty_cache()
 
         if self.verbose:
@@ -429,32 +448,32 @@ class AnimeBuilder:
         # self.facemodel_ddim_sampler = DDIMSampler(self.facemodel)  # ControlNet _only_ works with DDIM.
 
         # Stable Diffusion 2.1-base:
-        #controlnet = ControlNetModel.from_pretrained(
+        # controlnet = ControlNetModel.from_pretrained(
         #    "CrucibleAI/ControlNetMediaPipeFace", torch_dtype=torch.float16, variant="fp16")
-        #self.facepipe = StableDiffusionControlNetPipeline.from_pretrained(
+        # self.facepipe = StableDiffusionControlNetPipeline.from_pretrained(
         #    "stabilityai/stable-diffusion-2-1-base", controlnet=controlnet, safety_checker=None, torch_dtype=torch.float16
-        #)
+        # )
 
-        #controlnet = ControlNetModel.from_pretrained("CrucibleAI/ControlNetMediaPipeFace", subfolder="diffusion_sd15")
-        #if diffusionModel.endswith(".ckpt") or diffusionModel.endswith(".safetensors"):
+        # controlnet = ControlNetModel.from_pretrained("CrucibleAI/ControlNetMediaPipeFace", subfolder="diffusion_sd15")
+        # if diffusionModel.endswith(".ckpt") or diffusionModel.endswith(".safetensors"):
         #    self.facepipe = StableDiffusionControlNetPipeline.from_single_file(diffusionModel, controlnet=controlnet, safety_checker=None)
-        #else:
+        # else:
         #    self.facepipe = StableDiffusionControlNetPipeline.from_pretrained(diffusionModel, controlnet=controlnet, safety_checker=None)
 
-        #self.facepipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
+        # self.facepipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
 
         # Remove if you do not have xformers installed
         # see https://huggingface.co/docs/diffusers/v0.13.0/en/optimization/xformers#installing-xformers
         # for installation instructions
-        #self.facepipe.enable_xformers_memory_efficient_attention()
-        #self.facepipe.enable_model_cpu_offload()
-
-
+        # self.facepipe.enable_xformers_memory_efficient_attention()
+        # self.facepipe.enable_model_cpu_offload()
 
         # OR
         # Stable Diffusion 1.5:
-        controlnet = ControlNetModel.from_pretrained("CrucibleAI/ControlNetMediaPipeFace", subfolder="diffusion_sd15", torch_dtype=torch.float16, variant="fp16")
-        self.facepipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, safety_checker=None,torch_dtype=torch.float16)
+        controlnet = ControlNetModel.from_pretrained(
+            "CrucibleAI/ControlNetMediaPipeFace", subfolder="diffusion_sd15", torch_dtype=torch.float16, variant="fp16")
+        self.facepipe = StableDiffusionControlNetPipeline.from_pretrained(
+            "runwayml/stable-diffusion-v1-5", controlnet=controlnet, safety_checker=None, torch_dtype=torch.float16)
 
         self.facepipe.scheduler = UniPCMultistepScheduler.from_config(
             self.facepipe.scheduler.config)
@@ -463,7 +482,7 @@ class AnimeBuilder:
         # see https://huggingface.co/docs/diffusers/v0.13.0/en/optimization/xformers#installing-xformers
         # for installation instructions
         self.facepipe.enable_xformers_memory_efficient_attention()
-        #self.facepipe.enable_model_cpu_offload()
+        # self.facepipe.enable_model_cpu_offload()
 
         # if save memmory, move to cpu and do garbage collection
         if self.saveMemory:
@@ -490,34 +509,34 @@ class AnimeBuilder:
             # collect cuda memory
             torch.cuda.empty_cache()
 
-    def chatCompletion(self, messages, n=1, min_new_tokens=256, max_new_tokens=512,generation_prefix=""):
+    def chatCompletion(self, messages, n=1, min_new_tokens=256, max_new_tokens=512, generation_prefix=""):
 
-        #free up some memory
+        # free up some memory
         gc.collect()
         torch.cuda.empty_cache()
 
         # first we need to combine messages into a single string
         # as a reminder messages have the format {"role": "system/user/assistant", "content": "this is some conent"}
         prompt = ""
-        lastRole="system"
+        lastRole = "system"
         for message in messages:
-            #prompt += message['role']+":\n"
-            if message['role']!=lastRole:
+            # prompt += message['role']+":\n"
+            if message['role'] != lastRole:
                 prompt += "\n"
             prompt += message['content']+"\n"
-            lastRole=message['role']
+            lastRole = message['role']
 
         # now add a final "assitant:" to the prompt
-        #prompt += "assistant:\n"
+        # prompt += "assistant:\n"
         # now we can run the completion
 
-        prompt+="\n"+generation_prefix
+        prompt += "\n"+generation_prefix
 
         output = []
         for i in range(n):
-            
-            #print("\n=====\n", prompt, "\n=====\n")
-            
+
+            # print("\n=====\n", prompt, "\n=====\n")
+
             result = self.textGenerator['pipeline'](prompt,
                                                     min_new_tokens=min_new_tokens,
                                                     max_new_tokens=max_new_tokens,
@@ -528,26 +547,25 @@ class AnimeBuilder:
                                                     temperature=self.cfg["temperature"],
                                                     do_sample=True,
                                                     )
-            
+
             result_text = result[0]['generated_text']
 
-            #print("\n=====\n", result_text, "\n=====\n")
+            # print("\n=====\n", result_text, "\n=====\n")
 
             # now we need to pull out the resulting message
             start_index = len(prompt)
 
-            #stop at \n\n
+            # stop at \n\n
             end_index = result_text.find("\n\n", start_index)
 
-            #end_index = result_text.find("user:", start_index)
+            # end_index = result_text.find("user:", start_index)
 
-            #print("start_index:", start_index, "end_index:", end_index)
+            # print("start_index:", start_index, "end_index:", end_index)
 
             output += [generation_prefix+result_text[start_index:end_index]]
-            #output += [generation_prefix+result_text]
+            # output += [generation_prefix+result_text]
 
-
-        #free up some memory
+        # free up some memory
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -630,31 +648,28 @@ class AnimeBuilder:
         empty = generate_annotation(input_image, 1)
         anno = Image.fromarray(empty).resize((768, 768))
 
-        #if save memory, move from cpu to gpu
+        # if save memory, move from cpu to gpu
         if self.saveMemory:
             self.facepipe = self.facepipe.to('cuda')
 
         image = self.facepipe(prompt+a_prompt, negative_prompt=n_prompt,
                               image=anno, num_inference_steps=30).images[0]
-        #image = self.facepipe(prompt+a_prompt, negative_prompt=n_prompt,
+        # image = self.facepipe(prompt+a_prompt, negative_prompt=n_prompt,
         #                      image=input_image, num_inference_steps=30).images[0]
-        
-        #if save memory, move from gpu to cpu
+
+        # if save memory, move from gpu to cpu
         if self.saveMemory:
             self.facepipe = self.facepipe.to('cpu')
             gc.collect()
             torch.cuda.empty_cache()
 
-        
         image.save("./static/samples/tmp.png")
 
         return image
 
     def getPortrait(self, prompt, img2imgStrength=0.6, num_inference_steps=20):
 
-
         print("ABOUT TO DIE, PORTRAIT")
-
 
         depth_image_path = "./nan3.jpg"
 
@@ -682,7 +697,7 @@ class AnimeBuilder:
         output = self._get_portrait(input_image, prompt, a_prompt, n_prompt)
 
         if self.doImg2Img:
-            
+
             # img2Input = output.resize((self.imageSizes[2], self.imageSizes[3]))
             img2Input = output.resize((1024, 1024))
 
@@ -729,8 +744,8 @@ class AnimeBuilder:
                 img2 = self.img2img(
                     prompt=prompt,
                     negative_prompt=self.negativePrompt,
-                    #prompt_embeds=prompt_embeds,
-                    #negative_prompt_embeds=negative_prompt_embeds,
+                    # prompt_embeds=prompt_embeds,
+                    # negative_prompt_embeds=negative_prompt_embeds,
                     image=img2Input,
                     strength=img2imgStrength,
                     guidance_scale=7.5,
@@ -753,7 +768,6 @@ class AnimeBuilder:
             depthFilename = filename.replace(".png", "_depth.png")
             depth = self.getZoeDepth(output)
             depth.save(depthFilename)
-
 
         print("DIED")
 
@@ -836,13 +850,11 @@ class AnimeBuilder:
 
         generator = torch.Generator("cuda").manual_seed(seed)
 
-
         print("ABOUT TO DIE")
 
-        #if save memory, move out of cpu
+        # if save memory, move out of cpu
         if self.saveMemory:
             self.pipe = self.pipe.to('cuda')
-
 
         with autocast("cuda"):
             image = self.pipe([prompt],
@@ -853,14 +865,13 @@ class AnimeBuilder:
                               height=self.imageSizes[1],
                               generator=generator
                               ).images[0]
-            
 
-        #if save memory, move back to cpu
+        # if save memory, move back to cpu
         if self.saveMemory:
             self.pipe = self.pipe.to('cpu')
             gc.collect()
             torch.cuda.empty_cache()
-            
+
         print("DIED")
         image.save("./static/samples/test.png")
 
@@ -875,8 +886,8 @@ class AnimeBuilder:
                 img2 = self.img2img(
                     prompt=prompt,
                     negative_prompt=self.negativePrompt,
-                    #prompt_embeds=prompt_embeds,
-                    #negative_prompt_embeds=negative_prompt_embeds,
+                    # prompt_embeds=prompt_embeds,
+                    # negative_prompt_embeds=negative_prompt_embeds,
                     image=img2Input,
                     strength=self.img2imgStrength,
                     guidance_scale=7.5,
@@ -922,12 +933,11 @@ class AnimeBuilder:
         return filename
 
     def getZoeDepth(self, image, boxSize=1, blurRadius=1):
-        
+
         if self.saveMemory:
             self.zoe = self.zoe.to('cuda')
-        
-        depth = self.zoe.infer_pil(image)  # as numpy
 
+        depth = self.zoe.infer_pil(image)  # as numpy
 
         if self.saveMemory:
             self.zoe = self.zoe.to('cpu')
@@ -953,14 +963,14 @@ class AnimeBuilder:
         # wavfile_name = getFilename(self.savePath, "wav")
         wavfile_name = mp3file_name.replace(".mp3", ".wav")
 
-        #if save memory, move out of cpu
+        # if save memory, move out of cpu
         if self.saveMemory:
             self.audioLDMPipe = self.audioLDMPipe.to('cuda')
 
         audio = self.audioLDMPipe(
             prompt, num_inference_steps=num_inference_steps, audio_length_in_s=duration).audios[0]
-        
-        #if save memory, move back to cpu
+
+        # if save memory, move back to cpu
         if self.saveMemory:
             self.audioLDMPipe = self.audioLDMPipe.to('cpu')
             gc.collect()
@@ -1869,7 +1879,8 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 output += [choice.message.content]
 
         else:
-            output = self.chatCompletion(messages, n=n,generation_prefix="setting:")
+            output = self.chatCompletion(
+                messages, n=n, generation_prefix="setting:")
 
         return output
 
@@ -2176,7 +2187,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         summarizeNovelMessage = re.sub(r'\<.*?\>', '', summarizeNovelMessage)
 
         sceneSummary = allScenes[whichChapter -
-                                   1].getProperty("scene %d summary" % whichScene)
+                                 1].getProperty("scene %d summary" % whichScene)
 
         # print(summarizeNovelMessage)
 
@@ -2802,9 +2813,10 @@ In this scene, {scene <i> summary:TEXT:}""".replace("<i>", str(i))
                 self.templates["novelSummary"], "novelSummary", extraInfo=novelSuggestion)
         else:
 
-            nso={"storyObjects": storyObjects}
+            nso = {"storyObjects": storyObjects}
             if storyObjects.has("character type"):
-                nso["character type"] = storyObjects.getProperty("character type")
+                nso["character type"] = storyObjects.getProperty(
+                    "character type")
 
             novelSummary = WorldObject(
                 self.templates,
@@ -3303,7 +3315,7 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
 
 """
 
-        #replace \r\n everywhere with \n
+        # replace \r\n everywhere with \n
         template = template.replace("\r\n", "\n")
 
         pattern = r'\{([^:{}]+)(:[^:]*:.*?)?\}'
@@ -3331,7 +3343,7 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
         keys = [line.split(":")[0]
                 for line in tt[-1].split("\n") if ":" in line]
 
-        #print("MESSAGES", messages )
+        # print("MESSAGES", messages )
 
         for i in range(nTrials):
             if animeBuilder.use_gpt_for_chat_completion:
@@ -3356,7 +3368,7 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
 
     def chatGPTFillTemplate2(animeBuilder, template, templateName, extraInfo=None, objects=None, nTrials=3):
 
-        #replace \r\n everywhere with \n
+        # replace \r\n everywhere with \n
         template = template.replace("\r\n", "\n")
 
         pattern = r'\{([^:{}]+)(:[^:]*:.*?)?\}'
@@ -3367,7 +3379,7 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
 
         _extraInfo = []
 
-        #if objects is not None:
+        # if objects is not None:
         if True:
             # first fill in all of the values from objects
             def get_object_property(object_name, property_name):
@@ -3395,8 +3407,7 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
 
             def replacement_function(match_obj):
 
-
-                print("GOT HERE",match_obj)
+                print("GOT HERE", match_obj)
 
                 matched_text = match_obj.group(1)
                 match_split = matched_text.split(':')
@@ -3416,7 +3427,7 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
                         # _extraInfo.append(f"{{{matched_text}}}"+"="+s)
                         _extraInfo.append(line)
 
-                        print("RETURNING HERE",_extraInfo,s)
+                        print("RETURNING HERE", _extraInfo, s)
 
                         # return f"{{{matched_text}}}"
                         return s
