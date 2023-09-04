@@ -4,8 +4,8 @@ from example_screenplay import exampleScreenplayPrompt, exampleScreenplayResult
 import datetime
 import uuid
 import logging
-#from riffusion import get_music
-#import riffusion
+# from riffusion import get_music
+# import riffusion
 from worldObject import WorldObject, ListObject
 from templates import templates
 from mubert import generate_track_by_prompt
@@ -46,8 +46,8 @@ from diffusers import StableDiffusionControlNetPipeline, ControlNetModel, UniPCM
 import tomesd
 
 
-from cldm.model import create_model, load_state_dict
-from cldm.ddim_hacked import DDIMSampler
+#from cldm.model import create_model, load_state_dict
+#from cldm.ddim_hacked import DDIMSampler
 from laion_face_common import generate_annotation
 
 import subprocess
@@ -69,13 +69,18 @@ import sys
 
 import traceback
 
-#from multiprocessing import Pool
+
+from load_llama_model import getllama
+
+# from multiprocessing import Pool
+
 
 class CustomRootLogger(logging.Logger):
     def setLevel(self, level):
         stack_trace = ''.join(traceback.format_stack())
         print(f"Log level changed to {level} by:\n{stack_trace}")
         super().setLevel(level)
+
 
 # Replace the root logger with the custom one
 logging.setLoggerClass(CustomRootLogger)
@@ -125,7 +130,7 @@ class AnimeBuilder:
 
     def __init__(
         self,
-        textModel='EleutherAI/gpt-neo-1.3B',
+        textModel='EleutherAI/gpt-neo-2.7B',
         diffusionModel="hakurei/waifu-diffusion",
         vaeModel="stabilityai/sd-vae-ft-mse",
         templates=templates,
@@ -135,7 +140,7 @@ class AnimeBuilder:
         verbose=False,
         doImg2Img=False,
         img2imgStrength=0.15,
-        saveMemory=False,
+        saveMemory=True,
         cache_dir='../hf',
         textRevision=None,
         negativePrompt="collage, grayscale, text, watermark, lowres, bad anatomy, bad hands, text, error, missing fingers, cropped, worst quality, low quality, normal quality, jpeg artifacts, watermark, blurry, grayscale, deformed weapons, deformed face, deformed human body",
@@ -152,10 +157,19 @@ class AnimeBuilder:
         fixAsides=False,
         portraitPrompt=', anime, face, portrait, headshot, white background',
         computeDepth=True,
-        osth=True
+        osth=True,
+        tokenizer=None,
+        use_gpt_for_chat_completion=True,
+        parallel_screenplays=True
     ):
         self.osth = osth
         self.portraitPrompt = portraitPrompt
+
+        self.parallel_screenplays = parallel_screenplays
+
+        #always use parallen when using chatgpt
+        if use_gpt_for_chat_completion:
+            self.parallel_screenplays = True
 
         self.fixAsides = fixAsides
 
@@ -167,6 +181,7 @@ class AnimeBuilder:
         self.musicSuffix = musicSuffix
         self.savePath = savePath
         self.saveImages = saveImages
+        self.use_gpt_for_chat_completion = use_gpt_for_chat_completion
 
         self.ignored_words = set(
             ["the", "name", "setting", "music", "action", "sound", "effect"])
@@ -187,10 +202,10 @@ class AnimeBuilder:
             cfg = {
                 "genTextAmount_min": 30,
                 "genTextAmount_max": 100,
-                "no_repeat_ngram_size": 8,
-                "repetition_penalty": 2.0,
+                "no_repeat_ngram_size": 16,
+                "repetition_penalty": 1.0,
                 "MIN_ABC": 4,
-                "num_beams": 8,
+                "num_beams": 1,
                 "temperature": 1.0,
                 "MAX_DEPTH": 5
             }
@@ -228,7 +243,11 @@ class AnimeBuilder:
                 audioLDM, torch_dtype=torch.float16)
             self.audioLDMPipe = self.audioLDMPipe.to("cuda")
 
-        if textModel == "GPT3":
+        #move to cpu if saving memory
+        if self.saveMemory:
+            self.audioLDMPipe = self.audioLDMPipe.to("cpu")
+
+        if self.textModel == "GPT3":
             pass
             # self.textGenerator="GPT3"
 
@@ -239,7 +258,7 @@ class AnimeBuilder:
             openai.organization = "org-bKm1yrKncCnPfkcf8pDpe4GM"
             openai.api_key = os.getenv("OPENAI_API_KEY")
             openai.Model.list()
-        elif textModel == "GPT3-turbo":
+        elif self.textModel == "GPT3-turbo":
             # self.textGenerator="GPT3-turbo"
             self.textGenerator = {
                 'name': "GPT3-turbo",
@@ -248,21 +267,33 @@ class AnimeBuilder:
             openai.organization = "org-bKm1yrKncCnPfkcf8pDpe4GM"
             openai.api_key = os.getenv("OPENAI_API_KEY")
             openai.Model.list()
+        elif self.textModel == "llama":
+            thisTokenizer, thisPipeline = getllama()
+            self.textGenerator = {
+                'name': "llama",
+                'tokenizer': thisTokenizer,
+                'pipeline': thisPipeline
+            }
         else:
             # text model
             self.textModel = textModel
             self.textRevision = textRevision
 
             textGenerator = pipeline('text-generation',
-                                     revision=self.textRevision,
                                      torch_dtype=torch.float16,
                                      model=self.textModel,
-                                     device=0
-                                     # device_map="auto",
+                                     trust_remote_code=True,
+                                     device_map="auto",
+                                     model_kwargs={"load_in_4bit": True}
                                      )
 
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.textModel, torch_dtype=torch.float16)
+            if tokenizer is None:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.textModel, torch_dtype=torch.float16)
+
+            else:
+                self.tokenizer = tokenizer
+                textGenerator.tokenizer = tokenizer
 
             self.textGenerator = {
                 'name': self.textModel,
@@ -276,22 +307,27 @@ class AnimeBuilder:
         if self.verbose:
             print("LOADING IMAGE MODEL")
 
-        # scheduler
-        scheduler = DPMSolverMultistepScheduler.from_config(
-            diffusionModel, subfolder='scheduler')
-
+        
         # make sure you're logged in with `huggingface-cli login`
-        vae = AutoencoderKL.from_pretrained(vaeModel)
+        #vae = AutoencoderKL.from_pretrained(vaeModel) #maybe I should enable this again?
 
         # pipe = StableDiffusionPipeline.from_pretrained(diffusionModel,vae=vae, torch_dtype=torch.float16,custom_pipeline="composable_stable_diffusion")
-        #pipe = DiffusionPipeline.from_pretrained(
+        # pipe = DiffusionPipeline.from_pretrained(
         #    diffusionModel,
         #    vae=vae,
         #    torch_dtype=torch.float16,
         #    custom_pipeline="lpw_stable_diffusion",
-        #)
+        # )
 
-        pipe = DiffusionPipeline.from_pretrained(diffusionModel)
+        #pipe = DiffusionPipeline.from_pretrained(diffusionModel)
+        # check if model_id is a .ckpt or .safetensors file
+        if diffusionModel.endswith(".ckpt") or diffusionModel.endswith(".safetensors"):
+            print("about to die", diffusionModel)
+            pipe = StableDiffusionPipeline.from_single_file(diffusionModel,
+                                                    torch_dtype=torch.float16)
+        else:
+            pipe = StableDiffusionPipeline.from_pretrained(
+                diffusionModel, torch_dtype=torch.float16)
 
         # change to UniPC scheduler
         pipe.scheduler = UniPCMultistepScheduler.from_config(
@@ -303,6 +339,13 @@ class AnimeBuilder:
 
         self.pipe = pipe
 
+        #if save memory, move pipe to cpu and do garbage collection
+        if self.saveMemory:
+            self.pipe = self.pipe.to("cpu")
+            gc.collect()
+            #collect cuda memory
+            torch.cuda.empty_cache()
+
         self.pipe.safety_checker = None
 
         self.doImg2Img = doImg2Img
@@ -310,8 +353,14 @@ class AnimeBuilder:
         if self.doImg2Img:
             if self.verbose:
                 print("LOADING Img2Img")
+
+            if diffusionModel.endswith(".ckpt") or diffusionModel.endswith(".safetensors"):
+                thisModelName="runwayml/stable-diffusion-v1-5"
+            else:
+                thisModelName=diffusionModel
+
             self.img2img = StableDiffusionImg2ImgPipeline.from_pretrained(
-                diffusionModel,
+                thisModelName,
                 # revision=revision,
                 scheduler=self.pipe.scheduler,
                 unet=self.pipe.unet,
@@ -327,6 +376,13 @@ class AnimeBuilder:
             self.img2img.enable_attention_slicing()
             self.img2img.enable_xformers_memory_efficient_attention()
             tomesd.apply_patch(self.img2img, ratio=0.5)
+
+            #if save memmory, move to cpu and do garbage collection
+            if self.saveMemory:
+                self.img2img = self.img2img.to("cpu")
+                gc.collect()
+                #collect cuda memory
+                torch.cuda.empty_cache()
 
         if self.verbose:
             print("LOADING TTS MODEL")
@@ -365,30 +421,56 @@ class AnimeBuilder:
         self.femaleVoices = [i for i in range(len(s)) if s[i] == "F"]
 
         # controlnet for portrait generation
-        #self.facemodel = create_model('../cldm_v21.yaml').cpu()
-        #self.facemodel.load_state_dict(load_state_dict(
+        # self.facemodel = create_model('../cldm_v21.yaml').cpu()
+        # self.facemodel.load_state_dict(load_state_dict(
         #    '..\ControlNet\models/controlnet_sd21_laion_face_v2_full.ckpt', location='cuda'))
         # self.facemodel = self.facemodel.cuda()
-        #self.facemodel = self.facemodel.cpu()
+        # self.facemodel = self.facemodel.cpu()
         # self.facemodel_ddim_sampler = DDIMSampler(self.facemodel)  # ControlNet _only_ works with DDIM.
 
         # Stable Diffusion 2.1-base:
-        controlnet = ControlNetModel.from_pretrained("CrucibleAI/ControlNetMediaPipeFace", torch_dtype=torch.float16, variant="fp16")
-        self.facepipe = StableDiffusionControlNetPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-2-1-base", controlnet=controlnet, safety_checker=None, torch_dtype=torch.float16
-        )
+        #controlnet = ControlNetModel.from_pretrained(
+        #    "CrucibleAI/ControlNetMediaPipeFace", torch_dtype=torch.float16, variant="fp16")
+        #self.facepipe = StableDiffusionControlNetPipeline.from_pretrained(
+        #    "stabilityai/stable-diffusion-2-1-base", controlnet=controlnet, safety_checker=None, torch_dtype=torch.float16
+        #)
+
+        #controlnet = ControlNetModel.from_pretrained("CrucibleAI/ControlNetMediaPipeFace", subfolder="diffusion_sd15")
+        #if diffusionModel.endswith(".ckpt") or diffusionModel.endswith(".safetensors"):
+        #    self.facepipe = StableDiffusionControlNetPipeline.from_single_file(diffusionModel, controlnet=controlnet, safety_checker=None)
+        #else:
+        #    self.facepipe = StableDiffusionControlNetPipeline.from_pretrained(diffusionModel, controlnet=controlnet, safety_checker=None)
+
+        #self.facepipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
+
+        # Remove if you do not have xformers installed
+        # see https://huggingface.co/docs/diffusers/v0.13.0/en/optimization/xformers#installing-xformers
+        # for installation instructions
+        #self.facepipe.enable_xformers_memory_efficient_attention()
+        #self.facepipe.enable_model_cpu_offload()
+
+
+
         # OR
         # Stable Diffusion 1.5:
-        #controlnet = ControlNetModel.from_pretrained("CrucibleAI/ControlNetMediaPipeFace", subfolder="diffusion_sd15")
-        #self.facepipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, safety_checker=None)
+        controlnet = ControlNetModel.from_pretrained("CrucibleAI/ControlNetMediaPipeFace", subfolder="diffusion_sd15", torch_dtype=torch.float16, variant="fp16")
+        self.facepipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, safety_checker=None,torch_dtype=torch.float16)
 
-        self.facepipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
+        self.facepipe.scheduler = UniPCMultistepScheduler.from_config(
+            self.facepipe.scheduler.config)
 
         # Remove if you do not have xformers installed
         # see https://huggingface.co/docs/diffusers/v0.13.0/en/optimization/xformers#installing-xformers
         # for installation instructions
         self.facepipe.enable_xformers_memory_efficient_attention()
-        self.facepipe.enable_model_cpu_offload()
+        #self.facepipe.enable_model_cpu_offload()
+
+        # if save memmory, move to cpu and do garbage collection
+        if self.saveMemory:
+            self.facepipe = self.facepipe.to("cpu")
+            gc.collect()
+            # collect cuda memory
+            torch.cuda.empty_cache()
 
         if not self.osth:
             self.sad_talker = SadTalker("E:\img\SadTalker")
@@ -401,6 +483,75 @@ class AnimeBuilder:
             self.zoe = model_zoe_n.to(DEVICE)
         else:
             self.zoe = None
+
+        if self.saveMemory:
+            self.zoe = self.zoe.to("cpu")
+            gc.collect()
+            # collect cuda memory
+            torch.cuda.empty_cache()
+
+    def chatCompletion(self, messages, n=1, min_new_tokens=256, max_new_tokens=512,generation_prefix=""):
+
+        #free up some memory
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        # first we need to combine messages into a single string
+        # as a reminder messages have the format {"role": "system/user/assistant", "content": "this is some conent"}
+        prompt = ""
+        lastRole="system"
+        for message in messages:
+            #prompt += message['role']+":\n"
+            if message['role']!=lastRole:
+                prompt += "\n"
+            prompt += message['content']+"\n"
+            lastRole=message['role']
+
+        # now add a final "assitant:" to the prompt
+        #prompt += "assistant:\n"
+        # now we can run the completion
+
+        prompt+="\n"+generation_prefix
+
+        output = []
+        for i in range(n):
+            
+            #print("\n=====\n", prompt, "\n=====\n")
+            
+            result = self.textGenerator['pipeline'](prompt,
+                                                    min_new_tokens=min_new_tokens,
+                                                    max_new_tokens=max_new_tokens,
+                                                    return_full_text=True,
+                                                    no_repeat_ngram_size=self.cfg["no_repeat_ngram_size"],
+                                                    repetition_penalty=self.cfg["repetition_penalty"],
+                                                    num_beams=self.cfg["num_beams"],
+                                                    temperature=self.cfg["temperature"],
+                                                    do_sample=True,
+                                                    )
+            
+            result_text = result[0]['generated_text']
+
+            #print("\n=====\n", result_text, "\n=====\n")
+
+            # now we need to pull out the resulting message
+            start_index = len(prompt)
+
+            #stop at \n\n
+            end_index = result_text.find("\n\n", start_index)
+
+            #end_index = result_text.find("user:", start_index)
+
+            #print("start_index:", start_index, "end_index:", end_index)
+
+            output += [generation_prefix+result_text[start_index:end_index]]
+            #output += [generation_prefix+result_text]
+
+
+        #free up some memory
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        return output
 
     def _get_portrait0(self, input_image: Image.Image, prompt, a_prompt, n_prompt, max_faces, num_samples, ddim_steps, guess_mode, strength, scale, seed, eta):
 
@@ -469,21 +620,42 @@ class AnimeBuilder:
 
         # move to cpu
         # move to cuda
-        self.facemodel = self.facemodel.cpu()
+        self.facemodel = self.facemodel.to('cuda')
         gc.collect()
         torch.cuda.empty_cache()
 
         return results
-    
 
     def _get_portrait(self, input_image: Image.Image, prompt, a_prompt, n_prompt):
         empty = generate_annotation(input_image, 1)
-        anno=Image.fromarray(empty).resize((768,768))
-        image = self.facepipe(prompt+a_prompt,negative_prompt=n_prompt, image=anno, num_inference_steps=30).images[0]
+        anno = Image.fromarray(empty).resize((768, 768))
+
+        #if save memory, move from cpu to gpu
+        if self.saveMemory:
+            self.facepipe = self.facepipe.to('cuda')
+
+        image = self.facepipe(prompt+a_prompt, negative_prompt=n_prompt,
+                              image=anno, num_inference_steps=30).images[0]
+        #image = self.facepipe(prompt+a_prompt, negative_prompt=n_prompt,
+        #                      image=input_image, num_inference_steps=30).images[0]
+        
+        #if save memory, move from gpu to cpu
+        if self.saveMemory:
+            self.facepipe = self.facepipe.to('cpu')
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        
+        image.save("./static/samples/tmp.png")
+
         return image
 
-
     def getPortrait(self, prompt, img2imgStrength=0.6, num_inference_steps=20):
+
+
+        print("ABOUT TO DIE, PORTRAIT")
+
+
         depth_image_path = "./nan3.jpg"
 
         input_image = Image.open(depth_image_path)
@@ -503,15 +675,18 @@ class AnimeBuilder:
         seed = np.random.randint(0, 10000)
         eta = 0
 
-        #results = self._get_portrait(input_image, prompt, a_prompt, n_prompt, max_faces,
+        # results = self._get_portrait(input_image, prompt, a_prompt, n_prompt, max_faces,
         #                             num_samples, ddim_steps, guess_mode, strength, scale, seed, eta)
-        #results = self._get_portrait(input_image, prompt, a_prompt, n_prompt)
-        #output = Image.fromarray(results[1])
+        # results = self._get_portrait(input_image, prompt, a_prompt, n_prompt)
+        # output = Image.fromarray(results[1])
         output = self._get_portrait(input_image, prompt, a_prompt, n_prompt)
 
         if self.doImg2Img:
+            
             # img2Input = output.resize((self.imageSizes[2], self.imageSizes[3]))
             img2Input = output.resize((1024, 1024))
+
+            '''
 
             # some nonsense to handle long prompts, based off of https://github.com/huggingface/diffusers/issues/2136#issuecomment-1409978949
             # todo figure out what this
@@ -545,17 +720,30 @@ class AnimeBuilder:
             prompt_embeds = torch.cat(concat_embeds, dim=1)
             negative_prompt_embeds = torch.cat(neg_embeds, dim=1)
 
+            '''
+
+            if self.saveMemory:
+                self.img2img = self.img2img.to('cuda')
+
             with autocast("cuda"):
                 img2 = self.img2img(
-                    # prompt=prompt,
-                    prompt_embeds=prompt_embeds,
-                    negative_prompt_embeds=negative_prompt_embeds,
+                    prompt=prompt,
+                    negative_prompt=self.negativePrompt,
+                    #prompt_embeds=prompt_embeds,
+                    #negative_prompt_embeds=negative_prompt_embeds,
                     image=img2Input,
                     strength=img2imgStrength,
                     guidance_scale=7.5,
                     num_inference_steps=num_inference_steps,
                 ).images[0]
                 output = img2
+
+            if self.saveMemory:
+                self.img2img = self.img2img.to('cpu')
+                gc.collect()
+                torch.cuda.empty_cache()
+
+        print("DIED0")
 
         # return output
         filename = getFilename(self.savePath, "png")
@@ -565,6 +753,9 @@ class AnimeBuilder:
             depthFilename = filename.replace(".png", "_depth.png")
             depth = self.getZoeDepth(output)
             depth.save(depthFilename)
+
+
+        print("DIED")
 
         return filename
 
@@ -592,17 +783,17 @@ class AnimeBuilder:
 
             osth_path = '.\AAAI22-one-shot-talking-face'
 
-            os.makedirs(save_dir,exist_ok=True)
-            phoneme = processAudio(audio_file_path,phindex_location=".\AAAI22-one-shot-talking-face\phindex.json")
+            os.makedirs(save_dir, exist_ok=True)
+            phoneme = processAudio(
+                audio_file_path, phindex_location=".\AAAI22-one-shot-talking-face\phindex.json")
 
-            
-            #supress printing
+            # supress printing
             with open(os.devnull, "w") as f, contextlib.redirect_stdout(f):
-                mov=test_with_input_audio_and_image(image_path,audio_file_path,phoneme,
-                                ".\\AAAI22-one-shot-talking-face\\checkpoint\\generator.ckpt",
-                                ".\\AAAI22-one-shot-talking-face\\checkpoint\\audio2pose.ckpt",
-                                save_dir,osth_path)
-            
+                mov = test_with_input_audio_and_image(image_path, audio_file_path, phoneme,
+                                                      ".\\AAAI22-one-shot-talking-face\\checkpoint\\generator.ckpt",
+                                                      ".\\AAAI22-one-shot-talking-face\\checkpoint\\audio2pose.ckpt",
+                                                      save_dir, osth_path)
+
             print(mov)
             found_movie = glob.glob(os.path.join(save_dir, "*.mp4"))
 
@@ -634,16 +825,24 @@ class AnimeBuilder:
     def doGen(self, prompt, num_inference_steps=30, recursion=0):
 
         # move text model to cpu for now
-        if self.saveMemory:
-            self.textGenerator['pipeline'].model = self.textGenerator['pipeline'].model.cpu(
-            )
-            gc.collect()
-            torch.cuda.empty_cache()
+        # if self.saveMemory:
+        #    self.textGenerator['pipeline'].model = self.textGenerator['pipeline'].model.cpu(
+        #    )
+        #    gc.collect()
+        #    torch.cuda.empty_cache()
 
         seed = np.random.randint(0, 1000000)
         print("SEED: ", seed, "")
 
         generator = torch.Generator("cuda").manual_seed(seed)
+
+
+        print("ABOUT TO DIE")
+
+        #if save memory, move out of cpu
+        if self.saveMemory:
+            self.pipe = self.pipe.to('cuda')
+
 
         with autocast("cuda"):
             image = self.pipe([prompt],
@@ -654,53 +853,45 @@ class AnimeBuilder:
                               height=self.imageSizes[1],
                               generator=generator
                               ).images[0]
+            
+
+        #if save memory, move back to cpu
+        if self.saveMemory:
+            self.pipe = self.pipe.to('cpu')
+            gc.collect()
+            torch.cuda.empty_cache()
+            
+        print("DIED")
+        image.save("./static/samples/test.png")
 
         if self.doImg2Img:
             img2Input = image.resize((self.imageSizes[2], self.imageSizes[3]))
 
-            # some nonsense to handle long prompts, based off of https://github.com/huggingface/diffusers/issues/2136#issuecomment-1409978949
-            # todo figure out what this
-            max_length = self.pipe.tokenizer.model_max_length
-
-            input_ids = self.pipe.tokenizer(
-                prompt, return_tensors="pt").input_ids
-            input_ids = input_ids.to("cuda")
-
-            # negative_ids = self.pipe.tokenizer(self.negativePrompt, truncation=False, padding="max_length", max_length=input_ids.shape[-1], return_tensors="pt").input_ids
-            negative_ids = self.pipe.tokenizer(
-                self.negativePrompt, truncation=True, padding="max_length", max_length=input_ids.shape[-1], return_tensors="pt").input_ids
-            negative_ids = negative_ids.to("cuda")
-
-            padding_length = max_length - (input_ids.shape[-1] % max_length)
-
-            if padding_length > 0:
-                input_ids = torch.cat([input_ids, torch.full((input_ids.shape[0], padding_length),
-                                      self.pipe.tokenizer.pad_token_id, dtype=torch.long, device="cuda")], dim=1)
-                negative_ids = torch.cat([negative_ids, torch.full(
-                    (negative_ids.shape[0], padding_length), self.pipe.tokenizer.pad_token_id, dtype=torch.long, device="cuda")], dim=1)
-
-            concat_embeds = []
-            neg_embeds = []
-            for i in range(0, input_ids.shape[-1], max_length):
-                concat_embeds.append(self.pipe.text_encoder(
-                    input_ids[:, i: i + max_length])[0])
-                neg_embeds.append(self.pipe.text_encoder(
-                    negative_ids[:, i: i + max_length])[0])
-
-            prompt_embeds = torch.cat(concat_embeds, dim=1)
-            negative_prompt_embeds = torch.cat(neg_embeds, dim=1)
+            # move img2img model to gpu for now
+            if self.saveMemory:
+                self.img2img = self.img2img.to('cuda')
 
             with autocast("cuda"):
                 img2 = self.img2img(
-                    # prompt=prompt,
-                    prompt_embeds=prompt_embeds,
-                    negative_prompt_embeds=negative_prompt_embeds,
+                    prompt=prompt,
+                    negative_prompt=self.negativePrompt,
+                    #prompt_embeds=prompt_embeds,
+                    #negative_prompt_embeds=negative_prompt_embeds,
                     image=img2Input,
                     strength=self.img2imgStrength,
                     guidance_scale=7.5,
                     num_inference_steps=num_inference_steps,
                 ).images[0]
                 output = img2
+
+            # move img2img model back to cpu
+            if self.saveMemory:
+                self.img2img = self.img2img.to('cpu')
+                gc.collect()
+                torch.cuda.empty_cache()
+
+            print("DIED2")
+
         else:
             output = image
 
@@ -731,7 +922,18 @@ class AnimeBuilder:
         return filename
 
     def getZoeDepth(self, image, boxSize=1, blurRadius=1):
+        
+        if self.saveMemory:
+            self.zoe = self.zoe.to('cuda')
+        
         depth = self.zoe.infer_pil(image)  # as numpy
+
+
+        if self.saveMemory:
+            self.zoe = self.zoe.to('cpu')
+            gc.collect()
+            torch.cuda.empty_cache()
+
         value = depth
         if isinstance(value, torch.Tensor):
             value = value.detach().cpu().numpy()
@@ -751,8 +953,18 @@ class AnimeBuilder:
         # wavfile_name = getFilename(self.savePath, "wav")
         wavfile_name = mp3file_name.replace(".mp3", ".wav")
 
+        #if save memory, move out of cpu
+        if self.saveMemory:
+            self.audioLDMPipe = self.audioLDMPipe.to('cuda')
+
         audio = self.audioLDMPipe(
             prompt, num_inference_steps=num_inference_steps, audio_length_in_s=duration).audios[0]
+        
+        #if save memory, move back to cpu
+        if self.saveMemory:
+            self.audioLDMPipe = self.audioLDMPipe.to('cpu')
+            gc.collect()
+            torch.cuda.empty_cache()
 
         audio = ipd.Audio(audio, rate=16000, autoplay=True)
         with open(wavfile_name, 'wb') as f:
@@ -972,9 +1184,9 @@ class AnimeBuilder:
     ):
 
         # make sure text generator is on cuda (can get out of sync if we ctrl+c during doGen() )
-        if self.textGenerator["name"].startswith("GPT3"):
-            self.textGenerator['pipeline'].model = self.textGenerator['pipeline'].model.cuda(
-            )
+        # if self.textGenerator["name"].startswith("GPT3"):
+        #    self.textGenerator['pipeline'].model = self.textGenerator['pipeline'].model.cuda(
+        #    )
 
         self.amtMin = amtMin
         self.amtMax = amtMax
@@ -1186,7 +1398,7 @@ class AnimeBuilder:
 
                         speech, duration = self.getTalkingHeadVideo(
                             portrait, dialogue, voice, gender)
-                        
+
                     except Exception as e:
                         traceback.print_exc()
                         print("Error generating talking head video:", e)
@@ -1267,7 +1479,7 @@ class AnimeBuilder:
 
     def mergeName0(self, name1, names):
         s1 = set(name1.lower().split())-self.ignored_words
-        #@s1 = set([x for x in s1 if len(x) > 3]) #not actually helpful
+        # @s1 = set([x for x in s1 if len(x) > 3]) #not actually helpful
         for name2 in names:
             s2 = set(name2.lower().split())-self.ignored_words
             if s1.intersection(s2):
@@ -1281,12 +1493,12 @@ class AnimeBuilder:
 
     def mergeName(self, name1, names):
         s1 = set(name1.lower().split())-self.ignored_words
-        #s1 = set([x for x in s1 if len(x) > 3])#not actually helpful
+        # s1 = set([x for x in s1 if len(x) > 3])#not actually helpful
         if len(s1) == 0:
             return name1
         for name2 in names:
             s2 = set(name2.lower().split())-self.ignored_words
-            #s2 = set([x for x in s2 if len(x) > 3])
+            # s2 = set([x for x in s2 if len(x) > 3])
             if len(s2) == 0:
                 continue
             if s1.issubset(s2):
@@ -1295,26 +1507,27 @@ class AnimeBuilder:
                 return name2
         return name1
 
-    def enhancePrompt(self, prompt, characters,storyObjects=None):
+    def enhancePrompt(self, prompt, characters, storyObjects=None):
         output = prompt
         didEnhance = False
 
         print("ABOUT TO DIE")
         try:
             if storyObjects is not None and storyObjects.has("prompt object"):
-                prompt_object=storyObjects.getProperty("prompt object")
-                promptObject=WorldObject(
+                prompt_object = storyObjects.getProperty("prompt object")
+                promptObject = WorldObject(
                     self.templates,
                     self.textGenerator,
                     prompt_object,
-                    verbose=False
+                    verbose=False,
+                    cfg=self.cfg
                 )
                 print("GOT PROMPT OBJECT:", promptObject)
                 didEnhance = True
                 output += ", " + str(promptObject)
         except Exception as e:
             traceback.print_exc()
-            print("ERROR ENHANCING PROMPT:",e)
+            print("ERROR ENHANCING PROMPT:", e)
 
         for name in characters.keys():
             n = set([w.lower()
@@ -1344,11 +1557,11 @@ class AnimeBuilder:
     ):
 
         # make sure text generator is on cuda (can get out of sync if we ctrl+c during doGen() )
-        if self.textGenerator["name"].startswith("GPT3"):
-            pass
-        else:
-            self.textGenerator['pipeline'].model = self.textGenerator['pipeline'].model.cuda(
-            )
+        # if self.textGenerator["name"].startswith("GPT3"):
+        #    pass
+        # else:
+        #    self.textGenerator['pipeline'].model = self.textGenerator['pipeline'].model.cuda(
+        #    )
 
         # extract characters
         if savedcharacters is None:
@@ -1385,7 +1598,8 @@ class AnimeBuilder:
                     self.templates,
                     self.textGenerator,
                     "character",
-                    objects={"name": tag}
+                    objects={"name": tag},
+                    cfg=self.cfg
                 )
 
                 print("GENERATED CHARACTER", character.__repr__())
@@ -1479,9 +1693,9 @@ class AnimeBuilder:
             if tag == "setting":
 
                 prompt = description+promptSuffix
-                
 
-                prompt, didEnhance = self.enhancePrompt(prompt, _characters,storyObjects)
+                prompt, didEnhance = self.enhancePrompt(
+                    prompt, _characters, storyObjects)
                 lastPrompt = prompt
                 if didEnhance:
                     print("enhanced prompt", prompt)
@@ -1528,7 +1742,8 @@ class AnimeBuilder:
 
                 prompt = description+promptSuffix
                 lastPrompt = prompt
-                prompt, didEnhance = self.enhancePrompt(prompt, _characters,storyObjects)
+                prompt, didEnhance = self.enhancePrompt(
+                    prompt, _characters, storyObjects)
                 if didEnhance:
                     print("enhanced prompt", prompt)
 
@@ -1579,10 +1794,9 @@ class AnimeBuilder:
                     print("this should never happen!", transcript)
                     continue
 
-                
                 speech, duration = self.getTalkingHeadVideo(
                     portrait, dialogue, voice, gender)
-                
+
                 yield {"speech": speech,
                        "duration": duration,
                        "name": name,
@@ -1591,7 +1805,7 @@ class AnimeBuilder:
         return
 
     # @retry(wait=wait_exponential(multiplier=1, min=4, max=10),before_sleep=before_sleep_log(logger, logging.WARNING))
-    def createScreenplay(self, sceneDescription, previousMessages=[],n=1):
+    def createScreenplay(self, sceneDescription, previousMessages=[], n=1):
 
         systemprompt = """
 Description to Screenplay is an advanced software agent that can take a short description of any scene
@@ -1637,20 +1851,25 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             previousMessages + \
             [
             {"role": "user", "content": sceneDescription},
+            {"role": "user", "content": "SCREENPLAY:"},
         ]
 
         # print("Creating Screenplay", messages)
 
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            timeout=10,
-            n=n,
-        )
+        if self.use_gpt_for_chat_completion:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=messages,
+                timeout=10,
+                n=n,
+            )
 
-        output=[]
-        for choice in response.choices:
-            output += [choice.message.content]
+            output = []
+            for choice in response.choices:
+                output += [choice.message.content]
+
+        else:
+            output = self.chatCompletion(messages, n=n,generation_prefix="setting:")
 
         return output
 
@@ -1682,16 +1901,19 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
         messages = example_classifications+[{"role": "user", "content": text}]
 
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=messages, timeout=10
-        )
+        if self.use_gpt_for_chat_completion:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=messages, timeout=10
+            )
 
-        result = ''
-        for choice in response.choices:
-            result += choice.message.content
+            result = ''
+            for choice in response.choices:
+                result += choice.message.content
 
-        output = result.lower().strip()
+            output = result.lower().strip()
+        else:
+            output = self.chatCompletion(messages)[-1]
 
         if result not in categories:
             print("THIS SHOULD NEVER HAPPEN", result)
@@ -1835,9 +2057,9 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 score += 1
                 continue
 
-            #reject if description contains no letters
+            # reject if description contains no letters
             tag = line.split(":")[0].strip().lower()
-            description = line.split(":")[1].strip()                
+            description = line.split(":")[1].strip()
             if re.search("[a-zA-Z]", description) == None:
                 score += 1
                 continue
@@ -1858,18 +2080,26 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         _bestScreenplay = None
         bestScore = 999
 
-        #first let's request all of the screenplays in parallel (this doesn't work because it forks the whole thing...)
-        #pool = Pool(processes=4) #bad idea, forking this process is bad because of all the global variables
-        #screenplays=pool.map(lambda x: self.createScreenplay(sceneDescription, previousMessages=previousMessages), range(nTrials))
-        #createScreenplay
-        screenplays = self.createScreenplay(sceneDescription, previousMessages=previousMessages,n=nTrials)
+        # first let's request all of the screenplays in parallel (this doesn't work because it forks the whole thing...)
+        # pool = Pool(processes=4) #bad idea, forking this process is bad because of all the global variables
+        # screenplays=pool.map(lambda x: self.createScreenplay(sceneDescription, previousMessages=previousMessages), range(nTrials))
+        # createScreenplay
+
+        if self.parallel_screenplays:
+            screenplays = self.createScreenplay(
+                sceneDescription, previousMessages=previousMessages, n=nTrials)
 
         for i in range(nTrials):
             try:
                 print("CREATING SCREENPLAY, attempt", i, "of", nTrials)
-                #s = self.createScreenplay(
+                # s = self.createScreenplay(
                 #    sceneDescription, previousMessages=previousMessages)
-                s = screenplays[i]
+
+                if self.parallel_screenplays:
+                    s = screenplays[i]
+                else:
+                    s = self.createScreenplay(
+                        sceneDescription, previousMessages=previousMessages)[0]
                 print(s)
             except Exception as e:
                 print(e)
@@ -1892,18 +2122,23 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             if verbose:
                 print(s, score)
 
-            #print the loglevel to see if it's working
-            print("what happend to our log level?",logging.getLogger().getEffectiveLevel())
+            # print the loglevel to see if it's working
+            print("what happend to our log level?",
+                  logging.getLogger().getEffectiveLevel())
             logging.info("screenplay:\n score %d/%d=%f",
                          score, len(v), score/len(v))
 
             if len(v) > 8 and score <= allowed_errors:
-                # print("RETURNING EARLY",score,len(v),"\n".join(v))
-                #return "\n".join(v)
-                pass #no point in returning early anymore, since we generate nTrials screenplays regardless
+
+                if self.parallel_screenplays:
+                    pass  # no point in returning early anymore, since we generate nTrials screenplays regardless
+                else:
+                    print("RETURNING EARLY", score, len(v), "\n".join(v))
+                    return "\n".join(v)
+
             if len(v) > 8 and score/len(v) < bestScore:
                 logging.info("new best score! %f", score/len(v))
-                _bestScore=score
+                _bestScore = score
                 bestScore = score/len(v)
                 bestScreenplay = v
                 _bestScreenplay = s
@@ -1912,7 +2147,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         if bestScreenplay is None:
             print("unable to create screenplay!")
             s = self.createScreenplay(
-                sceneDescription, previousMessages=previousMessages,n=1)[0]
+                sceneDescription, previousMessages=previousMessages, n=1)[0]
             # print("GOT VALID SCREENPLAY",bestScore,len(v),"\n".join(v))
             v, score = self.validateScreenplay(s)
             return "\n".join(v)
@@ -1922,7 +2157,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                   _bestScore, len(bestScreenplay), bestScore/len(bestScreenplay))
             return "\n".join(bestScreenplay)
 
-    def createTranscriptGPT(self, novelSummary, characters, chapters, allChapters, whichChapter, whichScene, previousMessages=None, num_chapters=12, num_scenes=5, max_tokens=1000, additionalScenePrompt=None, conclusionPrompt=None, verbose=False):
+    def createTranscriptGPT(self, novelSummary, characters, chapters, allScenes, whichChapter, whichScene, previousMessages=None, num_chapters=12, num_scenes=5, max_tokens=1000, additionalScenePrompt=None, conclusionPrompt=None, verbose=False):
 
         print("creating scene %d of chapter %d" % (whichScene, whichChapter))
 
@@ -1933,13 +2168,14 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             objects={"novelSummary": novelSummary,
                      "novelCharacters": characters,
                      "novelChapters": chapters,
-                     }
+                     },
+            cfg=self.cfg
         ))
 
         # remove lines that start with "<"
         summarizeNovelMessage = re.sub(r'\<.*?\>', '', summarizeNovelMessage)
 
-        sceneSummary = allChapters[whichChapter -
+        sceneSummary = allScenes[whichChapter -
                                    1].getProperty("scene %d summary" % whichScene)
 
         # print(summarizeNovelMessage)
@@ -1977,8 +2213,9 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 {"role": "user", "content": "Create a transcript for chapter 0, scene 1 with the following summary".format(
                     whichChapter=whichChapter, whichScene=whichScene, sceneSummary=sceneSummary)},
                 {"role": "user", "content": examplePrompt},
+                {"role": "user", "content": "SCREENPLAY:"},
                 {"role": "assistant", "content": exampleTranscript},
-                {"role": "user", "content": "Create a transcript for chapter {whichChapter}, scene {whichScene} with the following summary".format(
+                {"role": "user", "content": "Create a transcript for chapter {whichChapter}, scene {whichScene} with the following summary\n\n".format(
                     whichChapter=whichChapter, whichScene=whichScene, sceneSummary=sceneSummary)}
             ]
 
@@ -1997,18 +2234,73 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
         outputMessages = messages+[
             {"role": "user", "content": sceneSummary},
+            {"role": "user", "content": "SCREENPLAY:"},
             {"role": "assistant", "content": response},
         ]
 
         return response, outputMessages
 
+    def createChaptersFromWorldObject(self, novelSummary,
+                                      characters,
+                                      k=3):
+
+        # first we need to build a custom template for the novel
+
+        customTemplate = """
+write a list of chapters for the novel        
+
+remember to give each chapter a title and a detailed summary
+
+summary: 
+{examplechapterPrompt}
+
+{exampleChapterResult}
+
+characters:
+{novelCharacters}
+
+summary: 
+{thisNovelSummary}
+
+Remember, chapter summary should be a brief sentence or two describing what happens in the chapter.
+
+""".format(
+            thisNovelSummary=novelSummary.getProperty("summary"),
+            examplechapterPrompt=examplechapterPrompt,
+            exampleChapterResult=exampleChapterResults[k],
+            novelCharacters=str(characters).split("\n", 1)[1]
+        )
+
+        emptyChapterTemplate = "\n".join(["""chapter <i> title:
+{chapter <i> title:TEXT:}
+chapter <i> summary:
+{chapter <i> summary:TEXT:}""".replace("<i>", str(i)) for i in range(1, k+1)])
+
+        customTemplate += "\n"+emptyChapterTemplate
+
+        print("how's it going?", customTemplate)
+
+        # now we need to build a world object for the novel
+        w = WorldObject(
+            self.templates,
+            self.textGenerator,
+            "novelChapters",
+            customTemplate=customTemplate,
+            cfg=self.cfg)
+
+        print("\n===\nhow did it go?\n===\n", w.filledTemplate)
+
+        output = str(w).split("\n", 1)[1]
+
+        return output
+
     @retry(wait=wait_exponential(multiplier=1, min=4, max=10))
     def novelToChapters(self, novelSummary, novelCharacters, previousMessages=None, k=12):
 
-        emptyChapterTemplate = "\n".join(["""chapter 1 title:
-<chapter 1 title>
-chapter 1 summary:
-<chapter 1 title>""" for i in range(1, k+1)])
+        emptyChapterTemplate = "\n".join(["""chapter {i} title:
+<chapter {i} title>
+chapter {i} summary:
+<chapter {i} title>""".format(i=i) for i in range(1, k+1)])
 
         systemPrompt = """
 Description to Chapters is an advanced software agent that can take a short description of any novel
@@ -2065,18 +2357,33 @@ For example "Jack enters the cave to fight the dragon.  Jack fights the dragon. 
         # print("here3",messages)
         # logging.info(messages)
 
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=messages, timeout=10
-        )
+        if self.use_gpt_for_chat_completion:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=messages, timeout=10
+            )
 
-        result = ''
-        for choice in response.choices:
-            result += choice.message.content
+            result = ''
+            for choice in response.choices:
+                result += choice.message.content
+        else:
+            result = self.chatCompletion(messages)[0]
 
         return result
 
     def validateChapters(self, novelChapters, k=12, verbose=False):
+
+        # if any lines contain a ":", then split on the ":" and move the 2nd half to the next line
+        # this is to fix a bug in the GPT-3 engine where it sometimes puts a ":" in the middle of a line
+        newLines = []
+        for line in novelChapters.split('\n'):
+            if ":" in line and not line.endswith(":"):
+                parts = line.split(":")
+                newLines.append(parts[0]+":")
+                newLines.append(parts[1])
+            else:
+                newLines.append(line)
+        novelChapters = '\n'.join(newLines)
 
         # remove blank lines
         customTemplate = ""
@@ -2097,7 +2404,8 @@ For example "Jack enters the cave to fight the dragon.  Jack fights the dragon. 
             self.templates,
             self.textGenerator,
             "novelChapters",
-            customTemplate=customTemplate)
+            customTemplate=customTemplate,
+            cfg=self.cfg)
 
         score = 0
         for i in range(1, k+1):
@@ -2205,21 +2513,36 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
                 {"role": "user", "content": emptyScenesTemplate},
             ]
 
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            timeout=10,
-        )
+        if self.use_gpt_for_chat_completion:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=messages,
+                timeout=10,
+            )
 
-        result = ''
-        for choice in response.choices:
-            result += choice.message.content
+            result = ''
+            for choice in response.choices:
+                result += choice.message.content
+        else:
+            result = self.chatCompletion(messages)[0]
 
         outputMessages = messages+[{"role": "assistant", "content": result}]
 
         return result, outputMessages
 
     def validateScenes(self, chapterScenes, k=5, verbose=False):
+
+        # if any lines contain a ":", then split on the ":" and move the 2nd half to the next line
+        # this is to fix a bug in the GPT-3 engine where it sometimes puts a ":" in the middle of a line
+        newLines = []
+        for line in chapterScenes.split('\n'):
+            if ":" in line and not line.endswith(":"):
+                parts = line.split(":")
+                newLines.append(parts[0]+":")
+                newLines.append(parts[1])
+            else:
+                newLines.append(line)
+        chapterScenes = '\n'.join(newLines)
 
         # remove blank lines
         customTemplate = ""
@@ -2239,7 +2562,8 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
             self.templates,
             self.textGenerator,
             "chapterScenes",
-            customTemplate=customTemplate)
+            customTemplate=customTemplate,
+            cfg=self.cfg)
 
         score = 0
         k = 1
@@ -2263,66 +2587,117 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
         numChapters=12,
         verbose=False
     ):
-        bestNovel = None
-        bestScore = -999
-        bestMessages = None
-        for i in range(nTrials):
-            c, messages = self.chapterToScenes(novelSummary,
-                                               characters,
-                                               chapters,
-                                               chapterTitle,
-                                               chapterSummary,
-                                               whichChapter,
-                                               previousMessages=previousMessages,
-                                               numChapters=numChapters,
-                                               k=k
-                                               )
 
-            w, foundScenes = self.validateScenes(c, k=k)
+        # first try using GPT
+        if self.use_gpt_for_chat_completion:
+            bestNovel = None
+            bestScore = -999
+            bestMessages = None
+            for i in range(nTrials):
+                c, messages = self.chapterToScenes(novelSummary,
+                                                   characters,
+                                                   chapters,
+                                                   chapterTitle,
+                                                   chapterSummary,
+                                                   whichChapter,
+                                                   previousMessages=previousMessages,
+                                                   numChapters=numChapters,
+                                                   k=k
+                                                   )
 
-            logging.info("FoundScenes %d / %d", foundScenes, k)
+                w, foundScenes = self.validateScenes(c, k=k)
 
-            if foundScenes == k:
-                return w, messages
-            if foundScenes > k:
-                score = k-foundScenes
-                print("too many scenes!", score)
-                if score > bestScore:
-                    bestNovel = w
-                    bestScore = score
-                    bestMessages = messages
-        print("failed to generate novel", foundScenes)
+                logging.info("FoundScenes %d / %d", foundScenes, k)
 
-        emptyScenesTemplate = "\n".join(["""scene {i} summary:
-<scene {i} summary>""".format(i=i)
-            for i in range(1, k+1)
-        ])
+                if foundScenes == k:
+                    return w, messages
+                if foundScenes > k:
+                    score = k-foundScenes
+                    print("too many scenes!", score)
+                    if score > bestScore:
+                        bestNovel = w
+                        bestScore = score
+                        bestMessages = messages
+            print("failed to generate novel", foundScenes)
 
-        fallbackTemplate = chapterSummary+"\n\n"+emptyScenesTemplate
+        if previousMessages is None:
+            previousMessages = []
 
-        print("fallback template", fallbackTemplate)
+        fallbackTemplate = ""
 
-        WorldObject(
+        if len(previousMessages) == 0:
+            fallbackTemplate += "chapter summary:\n"+exampleScenesPrompt+"\n"
+            fallbackTemplate += exampleScenesResult[k]
+
+        # make sure to include novel summary
+        fallbackTemplate += """
+Based off of the provided chapter summaries, write a detailed description of the scenes in this chapter.
+Each chapter has {k} scenes.              
+
+{novelCharacters}
+
+novel title:
+{novelTitle}
+novel summary:
+{novelSummary}
+
+""".format(
+            k=k,
+            novelTitle=novelSummary.getProperty("title"),
+            novelSummary=novelSummary.getProperty("summary"),
+            novelCharacters=str(characters).split("\n", 1)[1]
+        )
+
+        for message in previousMessages:
+            if message["role"] == "user":
+                fallbackTemplate += message["content"]+"\n\n"
+            if message["role"] == "assistant":
+                fallbackTemplate += message["content"]+"\n\n"
+
+        emptyScenesTemplate = "\n".join(["""scene <i> summary:
+In this scene, {scene <i> summary:TEXT:}""".replace("<i>", str(i))
+                                         for i in range(1, k+1)
+                                         ])
+
+        fallbackTemplate += "generate scenes for chapter %d of this novel\n" % whichChapter
+
+        fallbackTemplate += "chapter title:\n"+chapterTitle+"\n\n"
+
+        fallbackTemplate += "chapter summary:\n" + \
+            chapterSummary+"\n\n"+emptyScenesTemplate
+
+        # print("==========\n\nChapter "+str(whichChapter)+"fallback template\n====\n", fallbackTemplate,"\n\n")
+
+        w = WorldObject(
             self.templates,
             self.textGenerator,
             "chapterToScenes",
-            customTemplate=fallbackTemplate
+            customTemplate=fallbackTemplate,
+            cfg=self.cfg
         )
+
+        # print("\n====\nproduced object:\n"+str(w)+"\n\n")
+
+        # print("with filled template:\n"+w.filledTemplate+"\n\n")
 
         messages = previousMessages+[
             {"role": "user", "content": "generate scenes for chapter %d of this novel" %
              whichChapter},
-            {"role": "user", "content": str(chapterTitle)},
-            {"role": "user", "content": str(chapterSummary)},
-            {"role": "user", "content": emptyScenesTemplate},
+            {"role": "user", "content": "chapter title:\n"+str(chapterTitle)},
+            {"role": "user", "content": "chapter summary:\n" +
+                str(chapterSummary)},
+            # {"role": "assistant", "content": str(w).split("\n", 1)[1]}
         ]
 
-        chapter_scenes = str(w).split("\n", 1)[1]
+        # chapter_scenes = str(w).split("\n", 1)[1]
+        chapter_scenes = str(w)
+
+        # print("GIR",messages)
 
         print("generated fallback scenes", chapter_scenes)
 
         output_messages = messages+[
-            {"role": "assistant", "content": chapter_scenes}
+            {"role": "assistant", "content": str(w).split("\n", 1)[1]}
         ]
 
         return chapter_scenes, output_messages
@@ -2387,7 +2762,8 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
             self.templates,
             self.textGenerator,
             "storyObjects",
-            customTemplate=story_objects
+            customTemplate=story_objects,
+            cfg=self.cfg
         )
 
         '''
@@ -2421,8 +2797,26 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
 
         logging.info("here %s", novelSuggestion)
 
-        novel_summary = self.chatGPTFillTemplate(
-            self.templates["novelSummary"], "novelSummary", extraInfo=novelSuggestion)
+        if self.use_gpt_for_chat_completion:
+            novel_summary = self.chatGPTFillTemplate2(
+                self.templates["novelSummary"], "novelSummary", extraInfo=novelSuggestion)
+        else:
+
+            nso={"storyObjects": storyObjects}
+            if storyObjects.has("character type"):
+                nso["character type"] = storyObjects.getProperty("character type")
+
+            novelSummary = WorldObject(
+                self.templates,
+                self.textGenerator,
+                "novelSummary",
+                # objects={"title":"The big one",
+                #        "summary":"A group of sexy female lifeguards take up surfing"}
+                objects=nso,
+                cfg=self.cfg
+            )
+            novel_summary = str(novelSummary)
+            novel_summary = novel_summary.split('\n', 1)[1]
 
         if novel_summary is None:
             novelSummary = WorldObject(
@@ -2431,7 +2825,8 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
                 "novelSummary",
                 # objects={"title":"The big one",
                 #        "summary":"A group of sexy female lifeguards take up surfing"}
-                objects={"storyObjects": storyObjects}
+                objects={"storyObjects": storyObjects},
+                cfg=self.cfg
             )
 
             novel_summary = str(novelSummary)
@@ -2450,20 +2845,34 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
             self.templates,
             self.textGenerator,
             "storyObjects",
-            customTemplate=story_objects
+            customTemplate=story_objects,
+            cfg=self.cfg
         )
 
         novelSummary = WorldObject(
             self.templates,
             self.textGenerator,
             "novelSummary",
-            customTemplate=novel_summary
+            customTemplate=novel_summary,
+            cfg=self.cfg
         )
 
         objects = {"novelSummary": novelSummary}
 
-        novel_characters = self.chatGPTFillTemplate2(
-            templates["novelCharacters"], "novelCharacters", objects=objects)
+        if self.use_gpt_for_chat_completion:
+            novel_characters = self.chatGPTFillTemplate2(
+                templates["novelCharacters"], "novelCharacters", objects=objects)
+        else:
+            characters = WorldObject(
+                self.templates,
+                self.textGenerator,
+                "novelCharacters",
+                objects={"novelSummary": novelSummary,
+                         "storyObjects": storyObjects
+                         },
+                cfg=self.cfg
+            )
+            novel_characters = str(characters).split('\n', 1)[1]
 
         if novel_characters is not None:
             return novel_characters
@@ -2475,6 +2884,7 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
             objects={"novelSummary": novelSummary,
                      "storyObjects": storyObjects
                      },
+            cfg=self.cfg
         )
 
         return str(characters).split('\n', 1)[1]
@@ -2487,31 +2897,45 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
             self.templates,
             self.textGenerator,
             "storyObjects",
-            customTemplate=story_objects
+            customTemplate=story_objects,
+            cfg=self.cfg
         )
 
         novelSummary = WorldObject(
             self.templates,
             self.textGenerator,
             "novelSummary",
-            customTemplate=novel_summary
+            customTemplate=novel_summary,
+            cfg=self.cfg
         )
 
         characters = WorldObject(
             self.templates,
             self.textGenerator,
             "novelCharacters",
-            customTemplate=_characters
+            customTemplate=_characters,
+            cfg=self.cfg
         )
 
-        chapters = self.getValidChapters(
-            novelSummary,
-            characters,
-            k=num_chapters,
-            nTrials=nTrials
-        )
+        if self.use_gpt_for_chat_completion:
 
-        return str(chapters).split('\n', 1)[1]
+            chapters = self.getValidChapters(
+                novelSummary,
+                characters,
+                k=num_chapters,
+                nTrials=nTrials
+            )
+
+            output = str(chapters).split('\n', 1)[1]
+
+        else:
+            output = self.createChaptersFromWorldObject(
+                novelSummary,
+                characters,
+                k=num_chapters,
+            )
+
+        return output
 
     def create_scenes(self, story_objects, novel_summary, _characters, _chapters, num_chapters, num_scenes, nTrials=3):
 
@@ -2519,21 +2943,24 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
             self.templates,
             self.textGenerator,
             "novelSummary",
-            customTemplate=novel_summary
+            customTemplate=novel_summary,
+            cfg=self.cfg
         )
 
         characters = WorldObject(
             self.templates,
             self.textGenerator,
             "novelCharacters",
-            customTemplate=_characters
+            customTemplate=_characters,
+            cfg=self.cfg
         )
 
         chapters = WorldObject(
             self.templates,
             self.textGenerator,
             "chapters",
-            customTemplate=_chapters
+            customTemplate=_chapters,
+            cfg=self.cfg
         )
 
         scenes = self.chaptersToScenes(
@@ -2564,7 +2991,8 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
             self.templates,
             self.textGenerator,
             "storyObjects",
-            customTemplate=story_objects
+            customTemplate=story_objects,
+            cfg=self.cfg
         )
 
         if storyObjects.has("scene prompt"):
@@ -2582,21 +3010,16 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
             self.templates,
             self.textGenerator,
             "novelSummary",
-            customTemplate=novel_summary
+            customTemplate=novel_summary,
+            cfg=self.cfg
         )
 
         characters = WorldObject(
             self.templates,
             self.textGenerator,
             "novelCharacters",
-            customTemplate=_characters
-        )
-
-        chapters = WorldObject(
-            self.templates,
-            self.textGenerator,
-            "chapters",
-            customTemplate=_chapters
+            customTemplate=_characters,
+            cfg=self.cfg
         )
 
         chapters = WorldObject(
@@ -2613,7 +3036,8 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
                 self.templates,
                 self.textGenerator,
                 "chapterScenes",
-                customTemplate=_scenes
+                customTemplate=_scenes,
+                cfg=self.cfg
             )
 
             for _scenes in all_scenes
@@ -2629,6 +3053,7 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
                 "name": characters.getProperty("main character name"),
                 "description text": characters.getProperty("main character description"),
             },
+            cfg=self.cfg
             # verbose=True
         )
 
@@ -2639,7 +3064,8 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
             objects={
                 "name": characters.getProperty("supporting character 1 name"),
                 "description text": characters.getProperty("supporting character 1 description"),
-            }
+            },
+            cfg=self.cfg
         )
 
         supportingCharacter2 = WorldObject(
@@ -2649,7 +3075,8 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
             objects={
                 "name": characters.getProperty("supporting character 2 name"),
                 "description text": characters.getProperty("supporting character 2 description"),
-            }
+            },
+            cfg=self.cfg
         )
 
         antagonist = WorldObject(
@@ -2660,6 +3087,7 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
                 "name": characters.getProperty("antagonist name"),
                 "description text": characters.getProperty("antagonist description"),
             },
+            cfg=self.cfg
             # verbose=True
         )
 
@@ -2769,7 +3197,7 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
                 if storyObjects.has("prompt suffix"):
                     promptSuffix = ", " + \
                         storyObjects.getProperty("prompt suffix")+self.suffix
-                
+
                 anime = self.transcriptToAnime(
                     s,
                     portrait_size=portrait_size,
@@ -2795,9 +3223,9 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
         # Remove blank lines from the result
         result = '\n'.join(line for line in result.split('\n') if line.strip())
 
-        #if any lines contain a ":", then split on the ":" and move the 2nd half to the next line
-        #this is to fix a bug in the GPT-3 engine where it sometimes puts a ":" in the middle of a line
-        newLines=[]
+        # if any lines contain a ":", then split on the ":" and move the 2nd half to the next line
+        # this is to fix a bug in the GPT-3 engine where it sometimes puts a ":" in the middle of a line
+        newLines = []
         for line in result.split('\n'):
             if ":" in line and not line.endswith(":"):
                 parts = line.split(":")
@@ -2809,21 +3237,21 @@ For example, "Jack enters the cave, fights the dragon, and leaves after defeatin
 
         print("result", result)
 
-        #fix any keys that are correct (expect for the wrong case) by substituting the correct case
+        # fix any keys that are correct (expect for the wrong case) by substituting the correct case
         for key in keys:
-            
-            #match the key ignoring case
+
+            # match the key ignoring case
             m = re.search(r'(?i)'+key+r':', result)
             if m:
-                #replace the key with the correct case
+                # replace the key with the correct case
                 result = result.replace(m.group(0), key+':')
-
 
         w = WorldObject(
             self.templates,
             self.textGenerator,
             templateName,
-            customTemplate=result
+            customTemplate=result,
+            cfg=self.cfg
         )
         for key in keys:
             if not w.has(key):
@@ -2875,6 +3303,9 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
 
 """
 
+        #replace \r\n everywhere with \n
+        template = template.replace("\r\n", "\n")
+
         pattern = r'\{([^:{}]+)(:[^:]*:.*?)?\}'
         t = re.sub(pattern, r'<\1>', template)
         tt = [x.strip() for x in t.split("\n\n") if len(x.strip()) > 0]
@@ -2899,16 +3330,21 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
         messages += [{"role": "user", "content": tt[-1]}]
         keys = [line.split(":")[0]
                 for line in tt[-1].split("\n") if ":" in line]
-        
+
+        #print("MESSAGES", messages )
 
         for i in range(nTrials):
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=messages,
-                timeout=10
-            )
+            if animeBuilder.use_gpt_for_chat_completion:
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=messages,
+                    timeout=10
+                )
 
-            result = response.choices[0].message.content
+                result = response.choices[0].message.content
+            else:
+                result = animeBuilder.chatCompletion(messages)[0]
+
             logging.info("RESPONSE %d %s", i, result)
             isValid, result = animeBuilder.validate(
                 result, keys, "novelSummary")
@@ -2920,6 +3356,9 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
 
     def chatGPTFillTemplate2(animeBuilder, template, templateName, extraInfo=None, objects=None, nTrials=3):
 
+        #replace \r\n everywhere with \n
+        template = template.replace("\r\n", "\n")
+
         pattern = r'\{([^:{}]+)(:[^:]*:.*?)?\}'
         t = re.sub(pattern, r'<\1>', template)
         tt = [x.strip() for x in t.split("\n\n") if len(x.strip()) > 0]
@@ -2928,7 +3367,8 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
 
         _extraInfo = []
 
-        if objects is not None:
+        #if objects is not None:
+        if True:
             # first fill in all of the values from objects
             def get_object_property(object_name, property_name):
                 obj = objects[object_name]
@@ -2948,11 +3388,16 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
                     animeBuilder.templates,
                     animeBuilder.textGenerator,
                     property_type,
-                    objects=objects)
+                    objects=objects,
+                    cfg=animeBuilder.cfg)
 
                 return str(w)
 
             def replacement_function(match_obj):
+
+
+                print("GOT HERE",match_obj)
+
                 matched_text = match_obj.group(1)
                 match_split = matched_text.split(':')
 
@@ -2970,6 +3415,8 @@ The system never says "I'm sorry, but I cannot generate inappropriate or offensi
 
                         # _extraInfo.append(f"{{{matched_text}}}"+"="+s)
                         _extraInfo.append(line)
+
+                        print("RETURNING HERE",_extraInfo,s)
 
                         # return f"{{{matched_text}}}"
                         return s

@@ -467,11 +467,14 @@ antagonist description:
 Charon is the queen of the undead, who reside in the marsh. She is very evil and enjoys seeing others suffer. She is jealous of Nil and will do anything to get her revenge on him.
 
 
+
 >novel title:
 >{novelSummary.title}
     
 >Novel summary:
 >{novelSummary.summary}
+
+>make sure to give each character a name and a unique and intersting description
 
 main character name:
 {main character name:TEXT:}

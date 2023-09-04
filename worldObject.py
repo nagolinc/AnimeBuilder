@@ -38,15 +38,15 @@ class WorldObject:
         else:
             self.objects = objects
 
-        #need to intialize this here because of *ugh*
-        self.object={}
+        # need to intialize this here because of *ugh*
+        self.object = {}
 
-        if customTemplate is not None and len(customTemplate.strip())>0:
-            self.template=customTemplate
+        if customTemplate is not None and len(customTemplate.strip()) > 0:
+            self.template = customTemplate
         else:
-            self.template=templates[objectName]
+            self.template = templates[objectName]
 
-        self.orig_template=self.template
+        self.orig_template = self.template
 
         self.filledTemplate = self.fillTemplate(self.template)
 
@@ -56,16 +56,11 @@ class WorldObject:
             print("GOT FILLED TEMPLATE", self.objectName,
                   "\n\n", self.filledTemplate, "\n\n")
 
-        
-
         self.object = self.parseTemplate(self.filledTemplate)
 
+    def fillTemplate_GPT3(self, sceneDescription, messages=[]):
 
-    
-
-    def fillTemplate_GPT3(self,sceneDescription,messages=[]):
-
-        templatePrompt="""
+        templatePrompt = """
 
 Template Genie is a system that outputs text to fill in a template
 
@@ -111,16 +106,18 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
 """
 
+        messages = [
+            {"role": "system", "content": templatePrompt},
+        ] + messages + [
+            {"role": "user", "content": "output text that should replace the <TEXT> symbol"},
+            {"role": "user", "content": sceneDescription},
+        ]
+
+        #print("GPT3 INPUT", messages)
+
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[
-                    {"role": "system", "content": templatePrompt},
-                    ]+
-                    messages+
-                    [
-                    {"role": "user", "content": "output text that should replace the <TEXT> symbol"},
-                    {"role": "user", "content": sceneDescription},
-                ]
+            messages=messages
         )
 
         result = ''
@@ -128,25 +125,23 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             result += choice.message.content
 
         return result
-    
-    def fillTemplateValid(self,sceneDescription,messages=[]):
+
+    def fillTemplateValid(self, sceneDescription, messages=[]):
         for i in range(3):
-            result=self.fillTemplate_GPT3(sceneDescription,messages=[])
-            #must be one line
-            if len(result.split("\n"))==1:
+            result = self.fillTemplate_GPT3(sceneDescription, messages=[])
+            # must be one line
+            if len(result.split("\n")) == 1:
                 return result
-        
+
         raise Exception(sceneDescription)
 
-
-    def gpt3GenerateText_turbo(self,textInput):
-        input=textInput+"<TEXT>"
+    def gpt3GenerateText_turbo(self, textInput):
+        input = textInput+"<TEXT>"
         result = self.fillTemplateValid(input)
 
         print("FOO\n'"+input+"'\nREFOO\n'"+result+"'\nDEFOO")
 
         return result
-
 
         '''
         #call gpt3 api
@@ -168,18 +163,18 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
         return result
         '''
-    
-    def gpt3GenerateText(self,textInput):
+
+    def gpt3GenerateText(self, textInput):
 
         if self.verbose:
-            print("GPT3 INPUT",textInput)
+            print("GPT3 INPUT", textInput)
 
-        #print("about to die",len(textInput))
-        
-        #call gpt3 api
+        # print("about to die",len(textInput))
+
+        # call gpt3 api
         completion = openai.Completion.create(
-            #engine="text-davinci-003", 
-            engine="text-curie-001", 
+            # engine="text-davinci-003",
+            engine="text-curie-001",
             prompt=textInput,
             stop="\n",
             max_tokens=self.cfg["genTextAmount_max"],
@@ -189,33 +184,31 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         )['choices'][0]['text']
 
         if self.verbose:
-            print("GPT3 OUTPUT",completion)
+            print("GPT3 OUTPUT", completion)
 
         return completion
 
-
     def generateTextWithInput(self, textInput, depth=0):
 
-        #make sure pipelien is in cuda
-        if not self.textGenerator["name"].startswith("GPT3"):
-            self.textGenerator['pipeline'].model = self.textGenerator['pipeline'].model.cuda()
+        # make sure pipelien is in cuda
+        # if not self.textGenerator["name"].startswith("GPT3"):
+        #    self.textGenerator['pipeline'].model = self.textGenerator['pipeline'].model.cuda()
 
-        
         if depth > self.cfg["MAX_DEPTH"]:
             return "error"
-        
-        trailingSpace=""
 
-        if self.textGenerator["name"]=="GPT3":
-            #remove trailing space
-            if textInput[-1]==" ":
-                textInput=textInput[:-1]
-                trailingSpace=" "
+        trailingSpace = ""
+
+        if self.textGenerator["name"] == "GPT3":
+            # remove trailing space
+            if textInput[-1] == " ":
+                textInput = textInput[:-1]
+                trailingSpace = " "
             result = self.gpt3GenerateText(textInput)
-            lines=result.strip().split("\n")
-        elif self.textGenerator["name"]=="GPT3-turbo":
+            lines = result.strip().split("\n")
+        elif self.textGenerator["name"] == "GPT3-turbo":
             result = self.gpt3GenerateText_turbo(textInput)
-            lines=result.strip().split("\n")
+            lines = result.strip().split("\n")
         else:
             input_ids = self.textGenerator['tokenizer'](
                 textInput, return_tensors="pt").input_ids
@@ -234,7 +227,6 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             )
 
             lines = result[0]['generated_text'].strip().split("\n")
-
 
         # remove len()==0 lines
         lines = [line.strip() for line in lines if len(line.strip()) > 0]
@@ -262,7 +254,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 print(': present', result)
             return self.generateTextWithInput(textInput, depth=depth+1)
         # anything that's all punctuation is also bad
-        #rva = re.sub(r'\W+', '', rv)
+        # rva = re.sub(r'\W+', '', rv)
         rva = re.sub(r'[^a-zA-Z]+', '', rv)
         if len(rva) < self.cfg["MIN_ABC"]:
             if self.verbose:
@@ -285,7 +277,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
             output += str(gotProp)
 
-            if self.verbose==3:
+            if self.verbose == 3:
                 print("MATCH", thisMatch, gotProp)
 
             t = t+end
@@ -306,7 +298,6 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         objects = ["\n".join([line for line in o.split(
             "\n") if len(line) > 0]) for o in objects]
 
-
         if self.verbose:
             print(objects)
 
@@ -314,7 +305,7 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
             sa = re.sub(r'[^a-zA-Z]+', '', s)
             return len(sa)
 
-        startIndex = None    
+        startIndex = None
 
         for i, o in enumerate(objects):
             if o == "#":
@@ -326,10 +317,10 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
         objects = objects[startIndex:]
 
-        #remove empty objects
-        objects=[o for o in objects if len(o)>0]
+        # remove empty objects
+        objects = [o for o in objects if len(o) > 0]
 
-        #remove comments
+        # remove comments
         objects = [o for o in objects if not o.startswith("#")]
 
         if startIndex is None:
@@ -348,62 +339,58 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 # print("here0")
                 propName = line[:-1]
             else:
-                #print("here1, propName=",propName)
+                # print("here1, propName=",propName)
                 if propName != "NONE" and len(line) > 0:
                     if propName in output:
                         output[propName] += "\n"+line
                     else:
                         output[propName] = line
-        
-        
-        
-        #check for #NOREP pattern
-        orig_template=self.orig_template
+
+        # check for #NOREP pattern
+        orig_template = self.orig_template
         if "#NOREP\n" in orig_template:
             lastObject = objects[-1]
-            i=orig_template.index("#NOREP\n")+len("#NOREP\n")
-            new_template=orig_template[:i]+"\n\n"+lastObject+"\n\n"+orig_template[i:]
+            i = orig_template.index("#NOREP\n")+len("#NOREP\n")
+            new_template = orig_template[:i]+"\n\n" + \
+                lastObject+"\n\n"+orig_template[i:]
 
-            #get rid of excess newlines
-            new_template=re.sub("\n\n+\n","\n\n",new_template)
+            # get rid of excess newlines
+            new_template = re.sub("\n\n+\n", "\n\n", new_template)
 
-            self.templates[self.objectName]=new_template
+            self.templates[self.objectName] = new_template
 
-            #print("orig template is",new_template)
-            #print("new template is",new_template)
+            # print("orig template is",new_template)
+            # print("new template is",new_template)
 
+            # I NEED some logic here to prevent the template from growing forever
+            maximumTemplateSize = 1024
+            e = 0
+            while len(new_template) > maximumTemplateSize:
+                e += 1
+                print("TRIMMING TEMPLATE", self.objectName)
+                # get the part after #NOREP
+                i = new_template.index("#NOREP\n")+len("#NOREP\n")
+                templatebeginning = new_template[:i]
+                templateend = new_template[i:]
 
-            #I NEED some logic here to prevent the template from growing forever
-            maximumTemplateSize=1024
-            e=0
-            while len(new_template)>maximumTemplateSize:
-                e+=1
-                print("TRIMMING TEMPLATE",self.objectName)
-                #get the part after #NOREP
-                i=new_template.index("#NOREP\n")+len("#NOREP\n")
-                templatebeginning=new_template[:i]
-                templateend=new_template[i:]
-
-                if e>3:
-                    print("ERROR: template too big",self.objectName)
-                    print(new_template,"===",templatebeginning,"===",templateend,"===",objects)
+                if e > 3:
+                    print("ERROR: template too big", self.objectName)
+                    print(new_template, "===", templatebeginning,
+                          "===", templateend, "===", objects)
                     break
-                
 
+                # split templateend into objects on ("\n\n")
+                objects = templateend.split("\n\n")
+                # remove a random object
+                objects.pop(random.randint(0, len(objects)-2))
+                # rejoin objects
+                new_template = templatebeginning+"\n\n".join(objects)
 
-                #split templateend into objects on ("\n\n")
-                objects=templateend.split("\n\n")
-                #remove a random object
-                objects.pop(random.randint(0,len(objects)-2))
-                #rejoin objects
-                new_template=templatebeginning+"\n\n".join(objects)
-                
-                #get rid of excess newlines
-                new_template=re.sub("\n\n+\n","\n\n",new_template)
+                # get rid of excess newlines
+                new_template = re.sub("\n\n+\n", "\n\n", new_template)
 
-            self.templates[self.objectName]=new_template
-        
-        
+            self.templates[self.objectName] = new_template
+
         return output
 
     def getObjwithProp(self, obj_and_prop, output):
@@ -421,18 +408,16 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         else:
             objectName = obj_and_prop
 
-        if self.verbose==2:
-            print("checking for object",objectName,"in",self.objects)
-            
+        if self.verbose == 2:
+            print("checking for object", objectName, "in", self.objects)
 
         # handle saved objectsGPT
         if objectName in self.objects:
             thisObject = self.objects[objectName]
 
-
-            if self.verbose==2:
-                print("about to die, looking for property",propName,"in",objectName,"=",thisObject)
-
+            if self.verbose == 2:
+                print("about to die, looking for property",
+                      propName, "in", objectName, "=", thisObject)
 
             if propName is not None:
                 return thisObject.getProperty(propName)
@@ -447,11 +432,11 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
             if not self.textGenerator["name"].startswith("GPT3"):
                 output = output.strip()  # remove trailing " "s
-            #output = self.generateTextWithInput(output)
+            # output = self.generateTextWithInput(output)
             text = self.generateTextWithInput(output)
             if objectName != "TEXT" and propName is None:
                 if self.verbose:
-                    print("storing text",objectName,text)
+                    print("storing text", objectName, text)
                 self.objects[objectName] = text
             return text
         else:
@@ -474,19 +459,19 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                 objects = {}
                 for override in overrides.split(","):
                     k, v = override.split("=")
-                    gotV=None
+                    gotV = None
                     if "." in v:
-                        i=v.index(".")
-                        v0=v[:i]
-                        v1=v[i+1:]
-                        gotV=self.objects[v0].getProperty(v1)
+                        i = v.index(".")
+                        v0 = v[:i]
+                        v1 = v[i+1:]
+                        gotV = self.objects[v0].getProperty(v1)
                     else:
                         if v in self.objects:
-                            gotV=self.objects[v]
+                            gotV = self.objects[v]
                     if gotV:
                         objects[k] = gotV
                     else:
-                        print("this should never happen!",v,self.objects)
+                        print("this should never happen!", v, self.objects)
             # remove trailing digits
             if objType is None:
                 objType = re.sub(r'\d+$', '', objectName)
@@ -496,11 +481,11 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
                                      verbose=self.verbose)
             # store for future use
             if self.verbose:
-                print("storing object",objectName,thisObject)
+                print("storing object", objectName, thisObject)
             self.objects[objectName] = thisObject
             return self.objects[objectName]
 
-    def has(self,propName):
+    def has(self, propName):
         if propName in self.objects:
             return True
         if propName in self.object:
@@ -509,22 +494,22 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
 
     def getProperty(self, propName):
 
-        #todo, handle multiple "."s
+        # todo, handle multiple "."s
         if "." in propName:
-            i=propName.index(".")
-            v0=propName[:i]
-            v1=propName[i+1:]
-            if self.verbose==3:
-                print("getting sub-property",v0,v1)
+            i = propName.index(".")
+            v0 = propName[:i]
+            v1 = propName[i+1:]
+            if self.verbose == 3:
+                print("getting sub-property", v0, v1)
             return self.getProperty[v0].getProperty(v1)
 
-        if self.verbose==3:
+        if self.verbose == 3:
             print("getting property", propName, "from object", self.object)
         if propName in self.objects:
             return self.objects[propName]
         if propName in self.object:
             return self.object[propName]
-        print("error in", self.__repr__(), "\nmissing property:",propName)
+        print("error in", self.__repr__(), "\nmissing property:", propName)
         raise ValueError("property not found!")
 
     def __repr__(self):
@@ -538,10 +523,10 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         return "<world object:%s>\n" % self.objectName+self.chosenObject
 
     def __str__(self):
-        #try:
+        # try:
         if self.has("description"):
             return str(self.getProperty("description")).strip()
-        #except:
+        # except:
         else:
             return self.__repr__()
 
@@ -558,21 +543,20 @@ class ListObject:
         objects=None,
         cfg=None,
         verbose=False
-        ):
+    ):
 
-        self.objectName=objectName
-        self.n=n
+        self.objectName = objectName
+        self.n = n
 
-        uniqueKeys=set()
+        uniqueKeys = set()
 
-        
         if thisList is not None:
-            self.thisList=thisList
+            self.thisList = thisList
         else:
-            self.thisList=[]
+            self.thisList = []
 
-            #build up list if not provided
-            while len(self.thisList)<n:
+            # build up list if not provided
+            while len(self.thisList) < n:
                 newObject = WorldObject(
                     templates,
                     textGenerator,
@@ -580,33 +564,23 @@ class ListObject:
                     objects=objects,
                     cfg=cfg,
                     verbose=verbose)
-                
+
                 if uniqueKey is None:
-                    self.thisList+=[newObject]
+                    self.thisList += [newObject]
                 else:
-                    thisKey=str(newObject.getProperty(uniqueKey))
+                    thisKey = str(newObject.getProperty(uniqueKey))
                     if thisKey not in uniqueKeys:
-                        self.thisList+=[newObject]
-        
-        #list for random access
-        self.randomOrder=list(range(self.n))
+                        self.thisList += [newObject]
+
+        # list for random access
+        self.randomOrder = list(range(self.n))
         random.shuffle(self.randomOrder)
 
-    def getProperty(self,propName):
-        #item
+    def getProperty(self, propName):
+        # item
         if propName.startswith("ITEM"):
-            whichItem=int(propName[4:])
+            whichItem = int(propName[4:])
             return self.thisList[whichItem]
 
-        if propName=="RANDOM":
+        if propName == "RANDOM":
             return self.thisList[self.randomOrder[0]]
-        
-        
-
-
-        
-
-            
-
-
-

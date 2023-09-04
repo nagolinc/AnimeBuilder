@@ -351,6 +351,10 @@ if __name__ == '__main__':
     #portraitprompt with a default value of ', anime, face, portrait, headshot, white background'
     parser.add_argument('--portraitPrompt', type=str, default=', anime, face, portrait, headshot, white background',
                         help='portrait prompt')
+    
+    #language model (with a default value of 'llama')
+    parser.add_argument('--languageModel', type=str, default='llama',
+                        help='language model')
 
     # Add the argument for the list of 4 integers with default values
     parser.add_argument(
@@ -366,6 +370,10 @@ if __name__ == '__main__':
     #add queue size argument
     parser.add_argument('--queueSize', type=int, default=30,
                         help='Queue size (default: 10)')
+    
+    #add useGPTForChatCompletion argument
+    parser.add_argument('--useGPTForChatCompletion', action='store_true',
+                        help='Use GPT for chat completion')
 
     args = parser.parse_args()
 
@@ -385,7 +393,10 @@ if __name__ == '__main__':
     db = dataset.connect('sqlite:///movie_elements.db')
 
     animeBuilder = AnimeBuilder(num_inference_steps=args.numInferenceSteps,
-                                textModel="GPT3",
+                                #textModel="GPT3",
+                                #textModel='EleutherAI/gpt-neo-2.7B',
+                                textModel=args.languageModel,
+                                use_gpt_for_chat_completion=args.useGPTForChatCompletion,
                                 diffusionModel=args.modelName,
                                 doImg2Img=args.img2img,
                                 negativePrompt=args.negativePrompt,
@@ -394,6 +405,9 @@ if __name__ == '__main__':
                                 imageSizes=args.imageSizes,
                                 portraitPrompt=args.portraitPrompt,
                                 )
+    
+
+    animeBuilder.doGen("test"*100)
 
     if args.extraTemplatesFile:
         with open(args.extraTemplatesFile, "r") as file:

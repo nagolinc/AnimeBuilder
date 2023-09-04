@@ -1081,9 +1081,6 @@ scene prompt:
 
         <h2>Step 3: Create Chapters</h2>
         <form id="chapters-form">
-            <label for="numChapters">Number of Chapters:</label>
-            <input type="number" id="numChapters" name="numChapters" value="3">
-            <br>
             <label for="characters">Characters:</label>
             <br>
             <textarea id="characters" name="characters" rows="32" cols="150"></textarea>
@@ -1091,15 +1088,15 @@ scene prompt:
             <input type="hidden" id="hidden-storyObjects" name="storyObjects">
             <input type="hidden" id="hidden-novelSummary" name="novelSummary">
             <input type="hidden" id="hidden-extraTemplates" name="extraTemplates">
+            <label for="numChapters">Number of Chapters:</label>
+            <input type="number" id="numChapters" name="numChapters" value="3">
+            <br>
             <button type="submit">Create Chapters</button>
         </form>
         <pre id="chapters-result" style="display:none"></pre>
 
         <h2>Step 4: Create Scenes</h2>
         <form id="scenes-form">
-            <label for="numScenes">Number of Scenes per Chapter:</label>
-            <input type="number" id="numScenes" name="numScenes" value="3">
-            <br>
             <label for="chapters">Chapters:</label>
             <br>
             <textarea id="chapters" name="chapters" rows="32" cols="150"></textarea>
@@ -1109,6 +1106,9 @@ scene prompt:
             <input type="hidden" id="hidden-characters" name="characters">
             <input type="hidden" id="hidden-numChapters" name="numChapters">
             <input type="hidden" id="hidden-extraTemplates" name="extraTemplates">
+            <label for="numScenes">Number of Scenes per Chapter:</label>
+            <input type="number" id="numScenes" name="numScenes" value="3">
+            <br>            
             <button type="submit">Create Scenes</button>
         </form>
         <pre id="scenes-result" style="display:none"></pre>
@@ -1150,5 +1150,5 @@ scene prompt:
     <div class="container" id="canvasContainer">
         <canvas id="myCanvas" width="1024" height="1024"></canvas>
         <span class="caption" id="caption">Once Upon a Time</span>
-        <video class="video" id="my-video" src="path/to/my/video.mp4" style="display:None"></video>
+        <video class="video" id="my-video"  style="display:None"></video>
     </div>
