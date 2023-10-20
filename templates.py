@@ -475,6 +475,7 @@ Charon is the queen of the undead, who reside in the marsh. She is very evil and
 >{novelSummary.summary}
 
 >make sure to give each character a name and a unique and intersting description
+>character descriptions should be no more than 20-30 words
 
 main character name:
 {main character name:TEXT:}
@@ -496,7 +497,7 @@ antagonist description:
     
 ""","explainNovelTemplate":"""
     
-Now generate scenes for the following novel:    
+Now generate a screenplay for each scene in the following novel:    
 {novelSummary.summary}
 It contains characters:
 main character:

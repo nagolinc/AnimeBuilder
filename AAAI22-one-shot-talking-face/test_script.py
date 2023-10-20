@@ -86,7 +86,7 @@ class AudioPoseDataset(torch.utils.data.Dataset):
         return ph, audio, pose
 
 
-def test_with_input_audio_and_image(img_path, audio_path,phs, generator_ckpt, audio2pose_ckpt, save_dir="samples/results",config_prefix="./"):
+def test_with_input_audio_and_image(img_path, audio_path,phs, generator_ckpt, audio2pose_ckpt, save_dir="samples/results",config_prefix="./",decimate=1):
 
     startTime=time.time()
     
@@ -257,8 +257,10 @@ def test_with_input_audio_and_image(img_path, audio_path,phs, generator_ckpt, au
     generator.eval()
     kp_detector.eval()
 
+    kp_gen_source = kp_detector(img, True)
+
     with torch.no_grad():
-        for frame_idx in range(bs):
+        for frame_idx in range(0,bs,decimate):
             t = {}
 
             t["audio"] = audio_f[:, frame_idx].cuda()
@@ -266,7 +268,7 @@ def test_with_input_audio_and_image(img_path, audio_path,phs, generator_ckpt, au
             t["ph"] = ph_frames[:,frame_idx].cuda()
             t["id_img"] = img
             
-            kp_gen_source = kp_detector(img, True)
+            #kp_gen_source = kp_detector(img, True)
 
             gen_kp = ph2kp(t,kp_gen_source)
             if frame_idx == 0:
@@ -289,7 +291,7 @@ def test_with_input_audio_and_image(img_path, audio_path,phs, generator_ckpt, au
     # kwargs = {'duration': 1. / 25.0}
     video_path = os.path.join(log_dir, "temp", f_name)
     print("save video to: ", video_path)
-    imageio.mimsave(video_path, predictions_gen, fps=25.0)
+    imageio.mimsave(video_path, predictions_gen, fps=25.0/decimate)
 
     # audio_path = os.path.join(audio_dir, x['name'][0].replace(".mp4", ".wav"))
     save_video = os.path.join(log_dir, f_name)

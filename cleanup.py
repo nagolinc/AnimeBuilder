@@ -5,16 +5,18 @@ import glob
 import shutil
 
 #remove tmp.log
-if os.path.exists('tmp.log'):
-    os.remove('tmp.log')
+try:
+    if os.path.exists('tmp.log'):
+        os.remove('tmp.log')
+except:
+    pass
 
 #remove database if it exists
 if os.path.exists('movie_elements.db'):
     os.remove('movie_elements.db')
 
-#remove /pits/logs/
-if os.path.exists('./pits/logs/'):
-    shutil.rmtree('./pits/logs/')
+#remove /pits/logs/ (Don't do this, we need the checkpoint!)
+
 
 #remove any file that starts with 'movie_elements.db'    
 files=glob.glob("./movie_elements.db*")

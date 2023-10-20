@@ -54,73 +54,97 @@
 
         let aspect_ratio = screen.width / screen.height;
 
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(90, aspect_ratio, 0.1, 1000);
-
-        //lighting
-        scene.add(new THREE.HemisphereLight(0x606060, 0x404040));
-
-        const light = new THREE.DirectionalLight(0xffffff);
-        light.position.set(1, 1, 1).normalize();
-        scene.add(light);
-
-        const renderer = new THREE.WebGLRenderer();
-        renderer.setSize(1024 * aspect_ratio, 1024);
-        renderer.domElement.id = 'threeCanvas';
-        document.getElementById("canvasContainer").appendChild(renderer.domElement);
-
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-        const cube = new THREE.Mesh(geometry, material);
-        //scene.add(cube);
-
-
-
-        //particles
-        let particles, count = 0;
-
-
+        //scene globals
+        let scene
+        let camera
+        let cube
+        let renderer
+        //particle globals
+        let particles
+        let count = 0
         const numParticles = 300;
+        let positions
+        let colors
+        let scales
+        
 
-        const positions = new Float32Array(numParticles * 3);
-        const colors = new Float32Array(numParticles * 3);
-        const scales = new Float32Array(numParticles);
 
-        let i = 0, j = 0;
+        function setupScene() {
 
-        for (let iy = 0; iy < numParticles; iy++) {
-            positions[i] = (1-2*Math.random()) * 5 * aspect_ratio // x
-            positions[i + 1] = (1-2*Math.random()) * 5; // y
-            positions[i + 2] = 2 + Math.random() * 3; // z
-            //positions[i + 2] = 0
-            scales[j] = (1 + Math.random()) / 100;
-            i += 3;
-            j++;
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(90, aspect_ratio, 0.1, 1000);
 
-            colors[i]=Math.random()
-            colors[i+1]=Math.random()
-            colors[i]=Math.random()
+            //lighting
+            scene.add(new THREE.HemisphereLight(0x606060, 0x404040));
+
+            const light = new THREE.DirectionalLight(0xffffff);
+            light.position.set(1, 1, 1).normalize();
+            scene.add(light);
+
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(1024 * aspect_ratio, 1024);
+            renderer.domElement.id = 'threeCanvas';
+            document.getElementById("canvasContainer").appendChild(renderer.domElement);
+
+            const geometry = new THREE.BoxGeometry(1, 1, 1);
+            const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            cube = new THREE.Mesh(geometry, material);
+            //scene.add(cube);
+
+            function setupParticles() {
+
+                
+
+
+                
+
+                positions = new Float32Array(numParticles * 3);
+                colors = new Float32Array(numParticles * 3);
+                scales = new Float32Array(numParticles);
+
+                let i = 0, j = 0;
+
+                for (let iy = 0; iy < numParticles; iy++) {
+                    positions[i] = (1 - 2 * Math.random()) * 5 * aspect_ratio // x
+                    positions[i + 1] = (1 - 2 * Math.random()) * 5; // y
+                    positions[i + 2] = 2 + Math.random() * 3; // z
+                    //positions[i + 2] = 0
+                    scales[j] = (1 + Math.random()) / 100;
+                    i += 3;
+                    j++;
+
+                    colors[i] = Math.random()
+                    colors[i + 1] = Math.random()
+                    colors[i] = Math.random()
+                }
+                const particle_geometry = new THREE.BufferGeometry();
+                particle_geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                particle_geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                particle_geometry.setAttribute('scale', new THREE.BufferAttribute(scales, 1));
+
+                const particle_material = new THREE.ShaderMaterial({
+
+                    uniforms: {
+                        color: { value: new THREE.Color(0x88ffffff) },
+                    },
+                    vertexShader: document.getElementById('vertexshader').textContent,
+                    fragmentShader: document.getElementById('fragmentshader').textContent
+
+                });
+                //
+                particles = new THREE.Points(particle_geometry, particle_material);
+                scene.add(particles);
+
+            }
+
+            setupParticles()
+
+
+            camera.position.z = 5;
+
         }
-        const particle_geometry = new THREE.BufferGeometry();
-        particle_geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        particle_geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        particle_geometry.setAttribute('scale', new THREE.BufferAttribute(scales, 1));
 
-        const particle_material = new THREE.ShaderMaterial({
-
-            uniforms: {
-                color: { value: new THREE.Color(0x88ffffff) },
-            },
-            vertexShader: document.getElementById('vertexshader').textContent,
-            fragmentShader: document.getElementById('fragmentshader').textContent
-
-        });
-        //
-        particles = new THREE.Points(particle_geometry, particle_material);
-        scene.add(particles);
-
-
-        camera.position.z = 5;
+        setupScene()
 
         //brownian motion
         let vx = 0.1, vy = 0.1, vz = 0.1;
@@ -162,7 +186,7 @@
 
 
             let boundsX = (5 - camera.position.z) * screen_aspect_ratio
-            let boundsY = (5 - camera.position.z) + (5 * screen_aspect_ratio / image_aspect_ratio - 5)-0.2
+            let boundsY = (5 - camera.position.z) + (5 * screen_aspect_ratio / image_aspect_ratio - 5) - 0.2
             if (screen_aspect_ratio > image_aspect_ratio) {
                 let boundsX = (5 - camera.position.z) * screen_aspect_ratio + (5 * screen_aspect_ratio / image_aspect_ratio - 5)
                 let boundsY = (5 - camera.position.z)
@@ -226,8 +250,8 @@
 
             for (let iy = 0; iy < numParticles; iy++) {
 
-                positions[i] = positions[i] + (1-2*Math.random()) * snowSpeed
-                positions[i + 1] = positions[i + 1] + (1-2*Math.random()) * snowSpeed - gravity
+                positions[i] = positions[i] + (1 - 2 * Math.random()) * snowSpeed
+                positions[i + 1] = positions[i + 1] + (1 - 2 * Math.random()) * snowSpeed - gravity
                 if (positions[i + 1] < - 5) {
                     positions[i] = (1 - 2 * Math.random()) * 5
                     positions[i + 1] = 5
@@ -252,12 +276,11 @@
 
         animate();
 
+        let lastAspectRatio
+
         function addObject(imgPath, dPath, width, height) {
 
-            //remove previous image if exists
-            if ("img" in scene.userData) {
-                scene.remove(scene.userData["img"]);
-            }
+            
 
             const textureLoader = new THREE.TextureLoader();
             const colorMap = textureLoader.load(imgPath);
@@ -277,17 +300,55 @@
             let image_aspect_ratio = width / height;
             let screen_aspect_ratio = window.innerWidth / window.innerHeight;
 
-            let geometry = new THREE.PlaneGeometry(10 * screen_aspect_ratio, 10 * screen_aspect_ratio / image_aspect_ratio, 1000, 1000);
 
-            let mesh = new THREE.Mesh(geometry, material);
+
+            let mesh
+
+            //if mesh already exists,replace texture
+            //remove previous image if exists
+            if ("img" in scene.userData) {
+
+                //if aspect ratio is different, remove mesh and create new one
+                if (lastAspectRatio != image_aspect_ratio) {
+                    scene.remove(scene.userData["img"])
+                    delete scene.userData["img"]
+
+                    let geometry = new THREE.PlaneGeometry(10 * screen_aspect_ratio, 10 * screen_aspect_ratio / image_aspect_ratio, 1000, 1000);
+                    mesh = new THREE.Mesh(geometry, material);
+
+                    scene.add(mesh);
+                    scene.userData["img"] = mesh;
+                    //store image aspect ratio
+                    scene.userData["img_aspect_ratio"] = image_aspect_ratio;
+
+
+                }else{
+                    //assign material to mesh
+                    mesh=scene.userData["img"]
+                    mesh.material=material
+
+                }
+
+
+                
+                
+
+            }else{
+                let geometry = new THREE.PlaneGeometry(10 * screen_aspect_ratio, 10 * screen_aspect_ratio / image_aspect_ratio, 1000, 1000);
+                mesh = new THREE.Mesh(geometry, material);
+
+                scene.add(mesh);
+                scene.userData["img"] = mesh;
+                //store image aspect ratio
+                scene.userData["img_aspect_ratio"] = image_aspect_ratio;
+            }
 
             console.log(mesh)
 
-            scene.add(mesh);
+            //set last aspect ratio
+            lastAspectRatio = image_aspect_ratio
 
-            scene.userData["img"] = mesh;
-            //store image aspect ratio
-            scene.userData["img_aspect_ratio"] = image_aspect_ratio;
+            
 
             //randomize camera position
             camera.position.z = 3 + Math.random() * 2
@@ -299,11 +360,18 @@
             vy = speedLimit * (1 - 2 * Math.random())
             vz = speedLimit * (1 - 2 * Math.random())
 
+            //actual, let's always set the camera positon to 0,0,5
+            camera.position.z = 5
+            camera.position.x = 0
+            //y position should be as high as possible
+            camera.position.y = boundsY 
+
 
         }
 
         //expose to global scope
         window.addObject = addObject;
+        window.setupScene = setupScene;
 
     </script>
 
@@ -412,10 +480,16 @@
 
         function loadImage(src, width, height) {
 
+
+            //let's try replacing the whole scene (to see if this fixes our memory leak)
+            //setupScene()
+
             //replace ".png with _depth.png" in src
             let dSrc = src.replace(".png", "_depth.png")
             console.log(dSrc)
             addObject(src, dSrc, width, height)
+
+            
 
             console.log("loaded img", src)
 
@@ -502,6 +576,29 @@
                             .catch((error) => {
                                 console.error(error);
                             });
+
+
+                        //if video data, draw video on canvas
+                        if ('video' in data && data['video'] != null) {
+                            //var audio = new Audio(data['speech']);
+                            //#audio.play();
+
+                            let canvas = document.getElementById('myCanvas');
+                            let threecanvas = document.getElementById('threeCanvas');
+
+                            var video = document.getElementById("overlay-video");
+                            //display movie element
+                            video.controls = false;
+                            var video_src = "../static/samples/" + data['video']
+                            video.setAttribute('autoplay', '');
+                            //video.setAttribute('controls', '');
+                            video.src = video_src;
+                            video.style.display = 'block';
+                        }else{
+                            //overlay video element should be hidden
+                            var video = document.getElementById("overlay-video");
+                            video.style.display = 'none';
+                        }
 
                     }
 
@@ -817,6 +914,12 @@
                     video.height = scale * 256;
                     video.style.left = (canvas.offsetLeft + canvas.width - w) + 'px';
 
+                    //overlay video should scale to fit screen
+                    let overlayVideo = document.getElementById('overlay-video');
+                    overlayVideo.width = minDimension;
+                    overlayVideo.height = minDimension;
+
+
                     //update threecanvas
                     let threeCanvas = document.getElementById('threeCanvas');
                     threeCanvas.style.width = (minDimension * aspect_ratio) + 'px';
@@ -1041,8 +1144,8 @@ this {animal} is a particular {color}
             <label for="extraTemplates">Extra Templates:</label><br>
             <textarea id="extraTemplates" name="extraTemplates" rows="32" cols="150"></textarea>
             <br>
-            
-            
+
+
             Hint: you can put suggestions for the generator here.<br>
             <pre>
 novel suggestion:
@@ -1056,8 +1159,8 @@ zombie object
 scene prompt:
 , Make sure to include lots of action!
             </pre>
-            
-            
+
+
             <label for="storyObjects">Story Objects:</label>
             <br>
             <textarea id="storyObjects" name="storyObjects" rows="32" cols="150"></textarea>
@@ -1107,8 +1210,8 @@ scene prompt:
             <input type="hidden" id="hidden-numChapters" name="numChapters">
             <input type="hidden" id="hidden-extraTemplates" name="extraTemplates">
             <label for="numScenes">Number of Scenes per Chapter:</label>
-            <input type="number" id="numScenes" name="numScenes" value="3">
-            <br>            
+            <input type="number" id="numScenes" name="numScenes" value="2">
+            <br>
             <button type="submit">Create Scenes</button>
         </form>
         <pre id="scenes-result" style="display:none"></pre>
@@ -1150,5 +1253,7 @@ scene prompt:
     <div class="container" id="canvasContainer">
         <canvas id="myCanvas" width="1024" height="1024"></canvas>
         <span class="caption" id="caption">Once Upon a Time</span>
-        <video class="video" id="my-video"  style="display:None"></video>
+        <video class="video" id="my-video" style="display:None"></video>
+        <video class="video" id="overlay-video" style="display:None"></video>
+
     </div>

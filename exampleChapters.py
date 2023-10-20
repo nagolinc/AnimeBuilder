@@ -1,454 +1,514 @@
-examplechapterPrompt="Jack fights the dragon"
-exampleChapterResults={1:"""
+examplechapterPrompt = "Jack fights the dragon"
+exampleChapterResults = {
+    1: """
 chapter 1 title:
-The Dragon
+Single Confrontation
 chapter 1 summary:
-Jack travels to the dragons lair and defeats it
+Jack hears about the dragon, grabs his sword, travels to the dragon's lair, fights the dragon and defeats it.
 """,
-2:"""
+    2: """
 chapter 1 title:
-The Dragon's lair
+Preparation
 chapter 1 summary:
-Jack travels to the dragons lair
+Jack hears about the dragon, grabs his sword and shield, and practices a few swings.
 chapter 2 title:
-The Dragon's lair
-chapter 2 summary:
-Jack fights the dragon and defeats it
-""",
-3:"""
-chapter 1 title:
-The Dragon Awakens
-chapter 1 summary:
-In this chapter, we see Jack's world turned upside down when the dragon awakens from its slumber. Chaos ensues as the dragon sets fire to the village and Jack must fight for his survival against the beast.
-chapter 2 title:
-Preparing for Battle
-chapter 2 summary:
-In this chapter, Jack seeks out the help of the village elders to prepare for his battle against the dragon. He trains in sword fighting and learns about the dragon's weaknesses, all while trying to come to terms with the enormity of the task ahead.
-chapter 3 title:
 The Final Battle
-chapter 3 summary:
-In this chapter, Jack faces off against the dragon in a fierce and brutal battle. The odds are against him, but he fights with everything he's got in a desperate bid to save his village and those he loves. He finally defeats the dragon and emerges victorious.""",
-4:"""
-chapter 1 title:
-The Beast Awakens
-chapter 1 summary:
-Jack, a seasoned adventurer, sets out on a quest to slay the dragon that has been terrorizing the nearby villages. As he enters the dragon's lair, he realizes the magnitude of the task ahead of him.
-chapter 2 title:
-The Battle Begins
 chapter 2 summary:
-Jack engages in a fierce battle with the dragon, using all of his skills and weapons. The dragon proves to be a formidable opponent, and Jack struggles to keep up with its speed and strength.
-chapter 3 title:
-The Turning Point
-chapter 3 summary:
-Just when it seems like all hope is lost, Jack spots a weakness in the dragon's armor. With a well-placed strike, he manages to wound the dragon and turn the tide of the battle in his favor.
-chapter 4 title:
-Victory and Consequences
-chapter 4 summary:
-After a grueling fight, Jack emerges victorious, but not without consequences. He is left with scars and injuries from the battle, and he realizes that he may have underestimated the danger of his quest. Despite this, he is hailed as a hero by the villagers, and he begins to wonder what other challenges await him on his next adventure.
+Jack travels to the dragon's lair, engages in combat with the dragon, and defeats it.
 """,
-5:"""
+    3: """
 chapter 1 title:
-The Dragon's Lair
+Dragon's Attack
 chapter 1 summary:
-Jack sets off on his quest to defeat the dragon that terrorizes the nearby village. He must navigate through treacherous terrain and overcome various obstacles to reach the dragon's lair.
+The dragon burns a nearby field, Jack hears about it, and grabs his sword.
 chapter 2 title:
-The Battle Begins
+Blacksmith and Shield
 chapter 2 summary:
-Jack finally confronts the dragon in an epic battle. He must use all of his skills and wits to defeat the powerful beast and save the village from its wrath.
+Jack goes to the blacksmith to sharpen his sword, picks up a shield, and leaves.
 chapter 3 title:
-A New Ally
+Victory and Return
 chapter 3 summary:
-Jack discovers an unexpected ally in his fight against the dragon. Together, they devise a plan to take down the beast once and for all.
+Jack travels to the dragon's lair, fights the dragon, and defeats it, then returns to the village.
+""",
+    4: """
+chapter 1 title:
+Dragon's Wrath
+chapter 1 summary:
+The dragon destroys a farm, Jack hears about it, and tells the villagers he'll handle it.
+chapter 2 title:
+The Elder's Advice
+chapter 2 summary:
+Jack goes to the elder's house, learns about the dragon's weak spot, and receives a magical potion.
+chapter 3 title:
+Armory Visit
+chapter 3 summary:
+Jack visits the armory, grabs a new sword and shield, and sets them up.
 chapter 4 title:
+Final Showdown
+chapter 4 summary:
+Jack arrives at the lair, fights the dragon targeting its weak spot, defeats it, and heads back to the village.
+""",
+    5: """
+chapter 1 title:
+Initial Alarm
+chapter 1 summary:
+The dragon burns a watchtower, Jack hears the news, and decides to inform the villagers.
+chapter 2 title:
+Village Council
+chapter 2 summary:
+Jack calls for a village meeting, explains the situation, and volunteers to fight the dragon.
+chapter 3 title:
+Acquiring Supplies
+chapter 3 summary:
+Jack goes to the market, buys healing potions and arrows, and tests the bow for tension.
+chapter 4 title:
+Elder's Wisdom
+chapter 4 summary:
+Jack visits the elder, learns a battle chant for courage, and practices it.
+chapter 5 title:
+Dragon's Demise
+chapter 5 summary:
+Jack travels to the dragon's lair, fights the dragon using arrows and the chant, defeats it, and returns to the village.
+""",
+    6: """
+chapter 1 title:
+Dragon's Fury
+chapter 1 summary:
+The dragon attacks a caravan, Jack hears about it, and checks his weapon inventory.
+chapter 2 title:
+Caravan's Remains
+chapter 2 summary:
+Jack visits the caravan site, collects evidence of the dragon's scales, and returns to the village.
+chapter 3 title:
+Weapon Upgrade
+chapter 3 summary:
+Jack goes to the blacksmith, orders a spear with the dragon's scales, and collects it when ready.
+chapter 4 title:
+Strategic Meeting
+chapter 4 summary:
+Jack discusses strategy with the village militia, assigns roles, and conducts a mock practice.
+chapter 5 title:
+Rituals and Blessings
+chapter 5 summary:
+Jack visits the temple, receives blessings for battle, and meditates briefly.
+chapter 6 title:
 The Final Showdown
-chapter 4 summary:
-Jack and his ally face off against the dragon in a final, epic battle. The fate of the village hangs in the balance as they fight for their lives.
-chapter 5 title:
-The Aftermath
-chapter 5 summary:
-With the dragon defeated, Jack and his ally must deal with the aftermath of the battle. They must heal their wounds and rebuild the village, all while celebrating their hard-earned victory.
-""",
-6:"""
-chapter 1 title: 
-The Dragon's Lair
-chapter 1 summary:
-Jack ventures into the heart of the dragon's lair, facing his fears and preparing to battle the fearsome creature.
-chapter 2 title:
-The First Blow
-chapter 2 summary:
-In the heat of the battle, Jack strikes the first blow against the dragon, but quickly realizes that this will be no ordinary fight.
-chapter 3 title:
-A Narrow Escape
-chapter 3 summary:
-The dragon unleashes a deadly attack, and Jack narrowly escapes with his life. He must regroup and come up with a new strategy to defeat the beast.
-chapter 4 title:
-The Dragon's Weakness
-chapter 4 summary:
-After much research and study, Jack discovers the dragon's weakness and sets out to exploit it in the final battle.
-chapter 5 title:
-A Hero's Triumph
-chapter 5 summary:
-With his newfound knowledge and strength, Jack faces off against the dragon in a final showdown. The battle is intense, but in the end, Jack emerges victorious.
-chapter 6 title:
-The Return Home
 chapter 6 summary:
-After his epic journey, Jack returns home to his village as a hero, celebrated by all for his bravery and strength in the face of danger.
+Jack leads the militia to the dragon's lair, engages in a group battle, defeats the dragon using the spear, and the team returns victorious.
 """,
-7:"""
-chapter 1 title: 
-The Dragon Awakens
-chapter 1 summary:
-Jack discovers that a dragon has awoken from its slumber and is terrorizing the kingdom.
-chapter 2 title: 
-The Quest Begins
-chapter 2 summary:
-Jack sets out on a quest to find the dragon's lair and slay the beast.
-chapter 3 title: 
-The Journey
-chapter 3 summary:
-Jack faces many challenges on his journey, including treacherous terrain and dangerous creatures.
-chapter 4 title: 
-The Battle Approaches
-chapter 4 summary:
-As Jack gets closer to the dragon's lair, he begins to prepare for the battle ahead.
-chapter 5 title: 
-The Final Showdown
-chapter 5 summary:
-Jack finally confronts the dragon in an epic battle that will determine the fate of the kingdom.
-chapter 6 title: 
-The Aftermath
-chapter 6 summary:
-After the battle, Jack must deal with the aftermath and help the kingdom rebuild.
-chapter 7 title: 
-The Hero's Return
-chapter 7 summary:
-Jack returns to the kingdom as a hero, but he realizes that his journey has changed him forever.
-""",
-8:"""
+    7: """
 chapter 1 title:
-The Beast Awakens
+Dragon's Wrath Rekindled
 chapter 1 summary:
-Jack, a fearless knight, is called to duty. A dragon has been spotted terrorizing nearby villages, and Jack is determined to put an end to its reign of terror.
+The dragon attacks another village, Jack hears about it, and sketches a battle plan.
 chapter 2 title:
-Training for Battle
+Gathering Information
 chapter 2 summary:
-Jack spends weeks preparing for his encounter with the dragon. He practices sword fighting, archery, and even tries to learn a few magic spells.
+Jack scouts the dragon's lair, takes notes on its patterns, and returns to the village.
 chapter 3 title:
-The Hunt Begins
+Weapon Forging
 chapter 3 summary:
-Jack sets out on his journey to find the dragon. Along the way, he meets a few interesting characters who offer him guidance and support.
+Jack and the blacksmith forge a new battle-axe, test its balance, and Jack takes it.
 chapter 4 title:
-First Encounter
+Village Alliance
 chapter 4 summary:
-Jack finally comes face to face with the dragon, and the battle begins. The dragon proves to be much stronger than Jack anticipated.
+Jack meets with leaders from a neighboring village, forms an alliance, and they agree to provide archers.
 chapter 5 title:
-Injured and Alone
+Training Day
 chapter 5 summary:
-Jack is badly injured in the battle and left alone to recover. He reflects on his past and contemplates his future.
+Jack holds a training session for the village, instructs on basic defense, and concludes it.
 chapter 6 title:
-A New Ally
+War Council
 chapter 6 summary:
-Jack is rescued by a mysterious woman who offers to help him defeat the dragon. She possesses magical powers that may prove to be the key to his success.
+Jack discusses final plans with the militia, adjusts strategy based on everyone's input, and ends the meeting.
 chapter 7 title:
-Final Battle
+Dragon's Defeat
 chapter 7 summary:
-Jack and his new ally team up to take down the dragon once and for all. The battle is intense, and the outcome is uncertain.
-chapter 8 title:
-Victory at Last
-chapter 8 summary:
-Jack emerges victorious, and the people of the nearby villages celebrate his bravery and heroism. Jack reflects on his journey and the lessons he learned along the way.
+Jack, leading the joint force, arrives at the lair, they fight the dragon, defeat it with the battle-axe, and all return victorious.
 """,
-9:"""
+    8: """
 chapter 1 title:
-The Dragon's Lair
+New Threat Emerges
 chapter 1 summary:
-Jack sets out on his mission to slay the dragon that has been terrorizing the nearby villages.
+A second dragon is spotted, Jack hears the news, and marks its location on a map.
 chapter 2 title:
-Preparing for Battle
+Recruitment
 chapter 2 summary:
-Jack gathers his weapons and armor, and seeks advice from the village elders on how to take down the dragon.
+Jack goes to the town square, makes an announcement, and recruits volunteers.
 chapter 3 title:
-The Battle Begins
+Weapon Inventory
 chapter 3 summary:
-Jack enters the dragon's lair and engages in a fierce battle with the beast.
+Jack checks the armory, notes what's needed, and orders more supplies.
 chapter 4 title:
-The Dragon Strikes Back
+Scouting Mission
 chapter 4 summary:
-The dragon unleashes its full power, causing Jack to falter and struggle to stay alive.
+Jack and a team scout the new dragon's area, identify key features, and report back.
 chapter 5 title:
-A Desperate Escape
+Strategic Session
 chapter 5 summary:
-Jack narrowly escapes the lair, badly wounded and in need of rest and recovery.
+Jack holds a planning session, outlines the strategy, and validates it with experienced fighters.
 chapter 6 title:
-Regaining Strength
+Ceremonial Rituals
 chapter 6 summary:
-Jack spends time recovering and training, determined to return and finish what he started.
+Jack and the team participate in a good luck ritual held by the village priest and prepare mentally.
 chapter 7 title:
-The Final Battle
+Logistical Checks
 chapter 7 summary:
-Jack returns to the dragon's lair, stronger and more prepared than ever, ready to face the beast one last time.
+Jack reviews the supply wagons, confirms everything is loaded, and gives the all-clear.
 chapter 8 title:
-The Dragon's Defeat
+Double Dragon Down
 chapter 8 summary:
-Jack engages in a final, epic battle with the dragon, ultimately emerging victorious.
+Jack leads the force to the dragons' area, they split into groups to fight each dragon, defeat them, and return celebrating.
+""",
+    9: """
+chapter 1 title:
+Dragon's Menace Grows
+chapter 1 summary:
+A third dragon is spotted, Jack hears the news, and immediately calls for a meeting.
+chapter 2 title:
+Defense Measures
+chapter 2 summary:
+Jack inspects village fortifications, instructs improvements, and checks their completion.
+chapter 3 title:
+Weapon Upgrade II
+chapter 3 summary:
+Jack meets the blacksmith, designs a flame-resistant shield, and collects it.
+chapter 4 title:
+Alliance Extension
+chapter 4 summary:
+Jack sends messages to farther villages, receives their pledge for help, and confirms additional troops.
+chapter 5 title:
+Spy Mission
+chapter 5 summary:
+Jack sends spies to learn about the third dragon, they return with valuable info, and he updates the plan.
+chapter 6 title:
+Final Preparations
+chapter 6 summary:
+Jack conducts a final inventory check, confirms all are prepared, and holds a motivating talk.
+chapter 7 title:
+En Route
+chapter 7 summary:
+Jack and the extended force set off, make it to the halfway point, and rest.
+chapter 8 title:
+Unexpected Ambush
+chapter 8 summary:
+During the journey, they are ambushed by bandits, fight them off successfully, and continue on their way.
 chapter 9 title:
-Returning Home
+Third Dragon's Fall
 chapter 9 summary:
-Jack returns home, hailed as a hero, but forever changed by his encounter with the dragon.
+Jack and the force arrive at the third dragon's lair, engage in an epic battle, defeat the dragon, and return as heroes.
 """,
-10:"""
+    10: """
 chapter 1 title:
-The Dragon's Lair
+Dragon Quartet
 chapter 1 summary:
-Jack's quest to slay the dragon begins with a treacherous journey through the dark and dangerous forest leading to the dragon's lair.
+News arrives of a fourth dragon, Jack hears it, and calls for an emergency meeting.
 chapter 2 title:
-Fire and Fury
+New Allies
 chapter 2 summary:
-Jack finally confronts the dragon in a fierce battle of fire and fury, testing his courage and strength.
+Jack travels to another kingdom, gains new allies, and returns.
 chapter 3 title:
-A Narrow Escape
+Supply Train
 chapter 3 summary:
-Jack narrowly escapes the dragon's wrath and finds himself lost in the wilderness with little hope of survival.
+Jack reviews the incoming supply trains, verifies the goods, and has them stored.
 chapter 4 title:
-The Wise Hermit
+Mages Consult
 chapter 4 summary:
-Jack stumbles upon a wise hermit who shares his knowledge and helps Jack prepare for the next battle with the dragon.
+Jack consults with kingdom mages, learns new battle spells, and practices them.
 chapter 5 title:
-Forging the Sword
+Full Scale Plan
 chapter 5 summary:
-Jack learns the art of sword-making from the hermit and sets out to forge the perfect weapon to defeat the dragon.
+Jack maps out the full-scale plan, shares it with captains, and makes necessary revisions.
 chapter 6 title:
-The Dragon's Weakness
+Ritual of Protection
 chapter 6 summary:
-Jack discovers the dragon's weakness and sets out to exploit it in the final battle.
+Jack participates in a ritual of protection, feels empowered, and solidifies his resolve.
 chapter 7 title:
-The Final Showdown
+Final Briefing
 chapter 7 summary:
-Jack and the dragon engage in a final showdown, with the fate of the kingdom hanging in the balance.
+Jack holds the final briefing, ensures everyone knows their role, and breaks the session.
 chapter 8 title:
-Victory and Loss
+Travel Begins
 chapter 8 summary:
-Jack emerges victorious, but not without great losses. He must come to terms with his grief and rebuild the kingdom.
+Jack and the force embark on their journey, overcome minor obstacles, and camp for the night.
 chapter 9 title:
-A New Beginning
+Midway Battle
 chapter 9 summary:
-Jack begins to rebuild the kingdom with newfound wisdom and strength, ready to face any challenge that comes his way.
+They encounter a troll midway, successfully defeat it, and proceed.
 chapter 10 title:
-The Legacy of the Dragon Slayer
+Fourth Dragon's End
 chapter 10 summary:
-Jack's legacy as the dragon slayer lives on, inspiring generations to come and ensuring the safety of the kingdom for years to come.
+They reach the fourth dragon's lair, battle it, defeat the dragon, and start their journey back.
 """,
-11:"""
+    11: """
 chapter 1 title:
-Jack's Encounter with the Dragon
+The Dragon Council
 chapter 1 summary:
-Jack, a brave warrior, embarks on a dangerous mission to slay the dragon that terrorizes his village.
+Jack receives intel about a dragon council, reviews the report, and calls for a general assembly.
 chapter 2 title:
-The Dragon's Lair
+Allied Summit
 chapter 2 summary:
-Jack reaches the dragon's lair, a dark and ominous cave situated at the top of a treacherous mountain.
+Jack travels to an allied summit, proposes a unified strategy, and gains commitment from all parties.
 chapter 3 title:
-The Battle Begins
+Weapon Reinforcements
 chapter 3 summary:
-Jack confronts the dragon and the two engage in a fierce battle, with fire and steel flying in all directions.
+Jack meets with armorers, selects reinforcements for weapons, and oversees their installation.
 chapter 4 title:
-Betrayed
+Intel Gathering
 chapter 4 summary:
-Unbeknownst to Jack, his best friend has been secretly working against him.
+Jack dispatches spies to infiltrate the dragon council, they return with vital data, and Jack updates the plan.
 chapter 5 title:
-Confrontation
+Fortification Review
 chapter 5 summary:
-Jack confronts his friend and is able to return to hunting the dragon
+Jack inspects all village defenses, identifies weak points, and orders repairs.
 chapter 6 title:
-The Dragon's Weakness
+Soldier Promotions
 chapter 6 summary:
-Jack discovers the dragon's weakness and exploits it to gain an advantage in the battle.
+Jack holds a ceremony to promote key soldiers, announces their roles, and celebrates their commitment.
 chapter 7 title:
-The Dragon's Fury
+Community Rally
 chapter 7 summary:
-The dragon becomes increasingly furious and unleashes its full power, causing Jack to struggle to stay alive.
+Jack addresses the entire village, updates them on the situation, and fosters unity.
 chapter 8 title:
-A Desperate Move
+Departure Day
 chapter 8 summary:
-In a desperate move, Jack takes a risky action that may turn the tide of the battle in his favor.
+Jack organizes the troops, ensures everyone is ready, and commences the departure.
 chapter 9 title:
-The Final Blow
+Cave Scouts
 chapter 9 summary:
-The battle reaches its climax, and Jack makes a final, decisive strike against the dragon.
+Jack and a small team scout the caves where the council meets, lay traps, and retreat.
 chapter 10 title:
-The Dragon's Demise
+Dragon Council Disbanded
 chapter 10 summary:
-The dragon falls to the ground, defeated, and Jack emerges victorious.
+Jack and allies attack during the dragon council, successfully disband it, and capture vital members.
 chapter 11 title:
-The Celebration
+Celebration of Victory
 chapter 11 summary:
-Jack returns to his village, where he is hailed as a hero and celebrated for his bravery and skill.
+Jack and the force return to the village, are hailed as heroes, and hold a feast.
 """,
-12:"""
+    12: """
 chapter 1 title:
-The Dragon's Lair
+The Underworld Threat
 chapter 1 summary:
-Jack, a young and brave knight, sets out on a mission to slay the fierce dragon that has been terrorizing his village for years. He makes his way to the dragon's lair, a dark and foreboding cave deep within the mountains.
+A new threat from the underworld emerges, Jack hears about it, and consults ancient texts for knowledge.
 chapter 2 title:
-Preparing for Battle
+New Skillsets
 chapter 2 summary:
-As Jack approaches the dragon's lair, he takes some time to prepare for the battle ahead. He sharpens his sword, practices his fighting techniques, and mentally prepares himself for the challenge that lies ahead.
+Jack visits a wizard to learn magic skills, successfully casts beginner spells, and thanks the wizard.
 chapter 3 title:
-The Dragon Emerges
+Subterranean Journey
 chapter 3 summary:
-Jack enters the dragon's lair, ready to face his foe. Suddenly, the dragon emerges from the shadows, breathing fire and smoke. Jack charges towards the dragon, ready to engage in battle.
+Jack prepares for the journey to the underworld, gathers unique supplies, and says his goodbyes.
 chapter 4 title:
-Dodging Flames
+Initial Descent
 chapter 4 summary:
-As Jack fights the dragon, he must dodge flames and fireballs that the dragon hurls at him. He uses his agility and quick thinking to avoid the dragon's attacks and strike back with his sword.
+Jack and team begin their descent, face environmental hazards, and set up a midway camp.
 chapter 5 title:
-The Dragon's Weakness
+First Contact
 chapter 5 summary:
-Jack begins to notice a pattern in the dragon's attacks, and realizes that the dragon has a weakness that he can exploit. He carefully observes the dragon's movements, waiting for the right moment to strike.
+Jack and team encounter underworld creatures, engage in combat, and manage to negotiate a truce.
 chapter 6 title:
-Dealing the Final Blow
+Maze of Darkness
 chapter 6 summary:
-After a fierce battle, Jack finally sees an opening and strikes the dragon with a fatal blow. The dragon roars in agony and falls to the ground, defeated.
+Jack and team navigate a dark maze, solve its puzzles, and find the exit.
 chapter 7 title:
-Recovering the Treasure
+Guardian Battle
 chapter 7 summary:
-After defeating the dragon, Jack searches the lair for the treasure that the dragon had been hoarding. He finds a large stash of gold, jewels, and other treasures, which he takes back to his village.
+Jack fights the underworld guardian, uses his new magic skills, and defeats it.
 chapter 8 title:
-Returning Home
+Sealing the Portal
 chapter 8 summary:
-Jack returns to his village, hailed as a hero for his brave deeds. He distributes the dragon's treasure among the villagers, and is celebrated with feasting and merrymaking.
+Jack finds the portal linking the worlds, casts a sealing spell, and confirms its closure.
 chapter 9 title:
-The Aftermath
+Ascension
 chapter 9 summary:
-As Jack reflects on his adventure, he realizes that he has grown as a person and as a warrior. He feels a sense of accomplishment and pride in what he has achieved.
+Jack and the team ascend back to the surface, help each other through obstacles, and return.
 chapter 10 title:
-New Challenges
+Homecoming
 chapter 10 summary:
-Despite his victory over the dragon, Jack knows that there will always be new challenges and adventures to face. He looks forward to the future with excitement and anticipation.
+They return to the village, provide a full report, and rest.
 chapter 11 title:
-The Next Quest
+Council of Elders
 chapter 11 summary:
-Jack sets out on a new quest, this time with a group of fellow adventurers. They journey together, facing danger and overcoming obstacles as they seek to accomplish their mission.
+Jack attends a Council of Elders meeting, is commended for his bravery, and receives a new title.
 chapter 12 title:
-The Legacy of the Dragon Slayer
+Peaceful Days
 chapter 12 summary:
-Jack's legacy lives on even after he has passed away. He is remembered as a hero and a dragon slayer, inspiring future generations of adventurers to follow in his footsteps.
+Jack takes some time to relax, visits family and friends, and enjoys some peace.
 """,
-13:"""
-chapter 1 title: The Call to Adventure
-chapter 1 summary: Jack learns of a dragon terrorizing a nearby village and decides to take on the challenge.
-chapter 2 title: Preparation
-chapter 2 summary: Jack spends weeks preparing for the fight, training with weapons and gathering information about the dragon.
-chapter 3 title: The Journey Begins
-chapter 3 summary: Jack sets out on his journey to the village where the dragon is said to reside.
-chapter 4 title: The First Encounter 
-chapter 4 summary: Jack faces the dragon for the first time and realizes it's much stronger than he anticipated.
-chapter 5 title: A New Plan
-chapter 5 summary: After narrowly escaping from the dragon, Jack formulates a new plan to defeat it.
-chapter 6 title: The Plot Twist
-chapter 6 summary: Jack discovers that the dragon is actually a cursed prince and decides to find a way to break the curse instead of killing it.
-chapter 7 title: The Quest for the Cure
-chapter 7 summary: Jack goes on a quest to find the cure for the prince's curse.
-chapter 8 title: The Battle Continues
-chapter 8 summary: Despite his new plan, Jack still has to fight the dragon to protect the village.
-chapter 9 title: The Cure 
-chapter 9 summary: Jack finds the cure for the prince's curse and administers it to the dragon.
-chapter 10 title: The Transformation
-chapter 10 summary: The dragon transforms back into the prince and thanks Jack for freeing him from his curse.
-chapter 11 title: The Celebration
-chapter 11 summary: The village celebrates their liberation from the dragon's tyranny.
-chapter 12 title: A New Friendship
-chapter 12 summary: The prince and Jack become close friends and continue to go on adventures together.
-chapter 13 title: Jack Celebrates His Victory Over the Dragon
-chapter 13 summary: Jack reflects on his journey and celebrates his victory over the dragon, knowing that he made a lasting impact on the prince and the village.
-""",
-14:"""
+    13: """
 chapter 1 title:
-The Call to Adventure
+Dragon God's Fury
 chapter 1 summary:
-Jack receives a mysterious message that leads him to embark on a quest to defeat a dangerous dragon.
+A mythical Dragon God is angered, Jack receives a prophetic dream, and starts researching ancient myths.
 chapter 2 title:
-The Journey Begins
+Gathering of the Wise
 chapter 2 summary:
-Jack sets off on his journey, facing challenges and meeting new friends along the way.
+Jack convenes a gathering of wise men and scholars, discusses the Dragon God, and formulates an initial plan.
 chapter 3 title:
-The Dragon's Lair
+Quest for the Artifact
 chapter 3 summary:
-Jack arrives at the dragon's lair, where he must use all his skills and bravery to face the beast.
+Jack sets out on a quest to find a legendary artifact, faces multiple challenges, and secures the artifact.
 chapter 4 title:
-The Battle Begins
+Oracle Visit
 chapter 4 summary:
-Jack engages in an epic battle with the dragon, narrowly escaping its fiery breath.
+Jack visits an Oracle for more insights, receives cryptic advice, and spends time interpreting it.
 chapter 5 title:
-Unexpected Allies
+Trial of Courage
 chapter 5 summary:
-Just when things seem hopeless, Jack is aided by an unexpected ally who provides crucial assistance in the fight against the dragon.
+Jack faces a personal trial to prove his courage, overcomes his fears, and gains a new power.
 chapter 6 title:
-The Plot Thickens
+Final Preparations
 chapter 6 summary:
-As Jack continues to battle the dragon, he uncovers a shocking revelation that changes everything he thought he knew about his quest.
+Jack finalizes all preparations, conducts a review with his team, and readies for the final battle.
 chapter 7 title:
-The Dragon's Weakness
+Entering the Dragon Realm
 chapter 7 summary:
-Jack discovers the dragon's weakness and formulates a plan to exploit it, but the risks are high and the outcome uncertain.
+Jack and the team use the artifact to enter the Dragon God's realm, arrive successfully, and set up a base.
 chapter 8 title:
-Betrayal
+Celestial Challenges
 chapter 8 summary:
-In a shocking twist, Jack is betrayed by someone he thought he could trust, putting his mission in jeopardy.
+They face a series of challenges set by celestial beings, solve them successfully, and proceed.
 chapter 9 title:
-The Tables Turn
+Face to Face with God
 chapter 9 summary:
-Against all odds, Jack manages to turn the tables on the dragon, gaining the upper hand in the battle.
+Jack finally comes face to face with the Dragon God, engages in dialogue, and presents his case.
 chapter 10 title:
-The Final Showdown
+Dragon God's Trial
 chapter 10 summary:
-In a dramatic showdown, Jack and the dragon face off one last time, with everything on the line.
+Jack is put on a trial by the Dragon God, passes it successfully, and gains the God's favor.
 chapter 11 title:
-The Aftermath
+Gift from the God
 chapter 11 summary:
-With the battle over, Jack must deal with the aftermath and come to terms with the toll it has taken on him.
+Jack receives a divine gift from the Dragon God, thanks him, and prepares to leave.
 chapter 12 title:
-Unexpected Consequences
+Safe Return
 chapter 12 summary:
-As Jack returns home, he realizes that his victory over the dragon has unintended consequences that threaten to upend his life.
+Jack uses the artifact to transport everyone back safely, they arrive, and destroy the artifact.
 chapter 13 title:
-The Road to Redemption
+Celebration and Warning
 chapter 13 summary:
-Haunted by the choices he made during his quest, Jack sets out on a new journey to make amends for his mistakes.
-chapter 14 title:
-Jack Celebrates His Victory Over the Dragon
-chapter 14 summary:
-With a newfound sense of purpose, Jack celebrates his hard-won victory over the dragon and looks forward to the future with hope and determination.
+Jack is celebrated for saving the realms, gives a speech about remaining vigilant, and retires for the day.
 """,
-15:"""
-chapter 1 title: The Dragon's Arrival
-chapter 1 summary: Jack learns of the dragon's arrival and the threat it poses to his village.
-chapter 2 title: Preparing for Battle
-chapter 2 summary: Jack and the village leaders strategize and prepare for battle against the dragon.
-chapter 3 title: The Dragon's First Attack
-chapter 3 summary: The dragon attacks the village, causing chaos and destruction.
-chapter 4 title: Jack's Close Call
-chapter 4 summary: Jack narrowly escapes the dragon's flames and realizes he must train harder to defeat it.
-chapter 5 title: Training Begins
-chapter 5 summary: Jack begins an intense training regimen to prepare for the dragon's next attack.
-chapter 6 title: The Dragon's Weakness
-chapter 6 summary: Jack discovers the dragon's weakness and devises a plan to exploit it.
-chapter 7 title: The Second Attack
-chapter 7 summary: The dragon returns and Jack leads the counterattack, but the plan fails and Jack is badly injured.
-chapter 8 title: The Plot Twist
-chapter 8 summary: Jack discovers that the dragon was not attacking the village out of malice, but was searching for its lost child.
-chapter 9 title: The Search for the Dragon's Child
-chapter 9 summary: Jack and a team of villagers set out to find the dragon's lost child.
-chapter 10 title: Rescue Mission
-chapter 10 summary: Jack and the team locate the dragon's child, but must fight off other creatures to rescue it.
-chapter 11 title: The Dragon's Gratitude
-chapter 11 summary: The dragon is grateful for Jack's help and offers to make peace with the village.
-chapter 12 title: The Village's Dilemma
-chapter 12 summary: The village leaders must decide whether to trust the dragon's offer of peace or continue to fight.
-chapter 13 title: The Final Battle
-chapter 13 summary: The dragon and the village face off one last time in a battle that will determine their fate.
-chapter 14 title: Jack's Sacrifice
-chapter 14 summary: Jack makes a heroic sacrifice to defeat the dragon and save the village.
-chapter 15 title: Jack Celebrates his Victory over the Dragon
-chapter 15 summary: The village celebrates their victory over the dragon and Jack is hailed as a hero.
-"""}
+    14: """
+chapter 1 title:
+The Dragon Emperor
+chapter 1 summary:
+Jack hears rumors of a Dragon Emperor, verifies the information, and calls a war council.
+chapter 2 title:
+Artifact Hunt
+chapter 2 summary:
+Jack identifies the need for three ancient artifacts, divides the teams, and sends them on the quests.
+chapter 3 title:
+Artifact One
+chapter 3 summary:
+Jack's team retrieves the first artifact from a haunted forest, faces off against spirits, and returns.
+chapter 4 title:
+Artifact Two
+chapter 4 summary:
+Another team retrieves the second artifact from the bottom of the ocean, battles sea monsters, and returns.
+chapter 5 title:
+Artifact Three
+chapter 5 summary:
+The last team retrieves the third artifact from a mountain peak, battles an ice dragon, and returns.
+chapter 6 title:
+Assembly of Artifacts
+chapter 6 summary:
+Jack assembles the artifacts, activates their powers, and creates a weapon.
+chapter 7 title:
+Strategy Formation
+chapter 7 summary:
+Jack forms a detailed battle plan, assigns roles, and conducts a final review.
+chapter 8 title:
+Into the Dragon's Lair
+chapter 8 summary:
+Jack leads the team into the Dragon Emperor's lair, navigates traps, and reaches the central chamber.
+chapter 9 title:
+The Emperor's Guards
+chapter 9 summary:
+Jack's team fights the Dragon Emperor's elite guards, defeats them, and proceeds.
+chapter 10 title:
+Confronting the Emperor
+chapter 10 summary:
+Jack confronts the Dragon Emperor, engages in a fierce battle, and uses the artifacts to gain an edge.
+chapter 11 title:
+The Emperor's Fall
+chapter 11 summary:
+Jack defeats the Dragon Emperor, secures the realm, and captures the Emperor.
+chapter 12 title:
+Return and Restoration
+chapter 12 summary:
+Jack returns to the kingdom, locks away the artifacts and the Dragon Emperor, and restores peace.
+chapter 13 title:
+Heroes' Feast
+chapter 13 summary:
+The kingdom celebrates with a feast, Jack gives a victory speech, and dances the night away.
+chapter 14 title:
+The Legend
+chapter 14 summary:
+Jack writes down his adventures, seals it in a vault for future generations, and takes a long-deserved rest.
+""",
+    15: """
+chapter 1 title:
+Prophecy Reborn
+chapter 1 summary:
+Jack discovers an even older prophecy, reads it, and calls the wise council.
+chapter 2 title:
+Decoding the Prophecy
+chapter 2 summary:
+Jack and the wise men decode the prophecy, identify key elements, and prepare a research team.
+chapter 3 title:
+Scrolls of Antiquity
+chapter 3 summary:
+Jack finds ancient scrolls in a forgotten library, reads them, and finds clues.
+chapter 4 title:
+The Forgotten Island
+chapter 4 summary:
+Jack sails to a forgotten island, finds a hidden temple, and secures a magical gem.
+chapter 5 title:
+Desert of No Return
+chapter 5 summary:
+Jack travels to the inhospitable desert, battles sand worms, and finds the second magical gem.
+chapter 6 title:
+Mountain of the Gods
+chapter 6 summary:
+Jack climbs the highest peak, solves divine puzzles, and obtains the third magical gem.
+chapter 7 title:
+Unifying the Gems
+chapter 7 summary:
+Jack unifies the gems to form a new, powerful artifact, and understands its purpose.
+chapter 8 title:
+Gathering of All Kingdoms
+chapter 8 summary:
+Jack hosts a gathering of all known kingdoms, forms alliances, and distributes tasks.
+chapter 9 title:
+Creation of the Barrier
+chapter 9 summary:
+Jack uses the artifact to create a magical barrier around the realms, starts the spell, and successfully activates it.
+chapter 10 title:
+The Final Enemy
+chapter 10 summary:
+Jack identifies the final enemy mentioned in the prophecy, battles it, and captures it.
+chapter 11 title:
+Sealing the Enemy
+chapter 11 summary:
+Jack uses the artifact to seal away the final enemy in a dimension lock, and destroys the key.
+chapter 12 title:
+Deactivation and Safety
+chapter 12 summary:
+Jack deactivates the magical barrier, ensures the realms are safe, and stores away the artifact.
+chapter 13 title:
+Last Council
+chapter 13 summary:
+Jack holds the last council meeting, delegates responsibilities, and announces his retirement.
+chapter 14 title:
+Farewell to Arms
+chapter 14 summary:
+Jack officially resigns from his role as the protector, hands over his sword, and receives a standing ovation.
+chapter 15 title:
+New Horizons
+chapter 15 summary:
+Jack sets off for a new, peaceful life in an unknown land, takes a last look at his home, and sails away.
+"""
+}
+

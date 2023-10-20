@@ -174,7 +174,8 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         # call gpt3 api
         completion = openai.Completion.create(
             # engine="text-davinci-003",
-            engine="text-curie-001",
+            #engine="text-curie-001",
+            engine="gpt-3.5-turbo-instruct",
             prompt=textInput,
             stop="\n",
             max_tokens=self.cfg["genTextAmount_max"],
@@ -308,9 +309,10 @@ the system NEVER uses ""s ()'s {}'s []'s or nonstandard punctuation
         startIndex = None
 
         for i, o in enumerate(objects):
-            if o == "#":
-                startIndex = i+1
-                break
+            for line in o.split("\n"):
+                if line == "#":
+                    startIndex = i+1
+                    break
 
         if self.verbose:
             print("start index", startIndex)

@@ -135,6 +135,11 @@ class MovieGeneratorWrapper:
         self.current_count = 0
         self.available_count = 0
         self.queue_size = queue_size
+
+        self.active_tasks = 0
+        self.futures=[]
+        self.queue_index=0 # the index of the last element placed in the queue
+
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
         self._queue = queue.Queue(self.queue_size)
@@ -142,6 +147,8 @@ class MovieGeneratorWrapper:
 
         # Create a table for movie elements
         self.movie_elements_table = db['movie_elements']
+
+        
 
     def _get_next_element(self):
         try:
@@ -163,22 +170,45 @@ class MovieGeneratorWrapper:
             return None
 
     def _fetch_next_element(self):
-        self._executor.submit(self._fetch_and_enqueue_next_element)
+        if self.active_tasks >= 1:
+            print("ACTIVE TASKS",self.active_tasks)
+            return
+        
+        thisFuture = self._executor.submit(self._fetch_and_enqueue_next_element)
+        self.active_tasks += 1
+        self.futures.append(thisFuture)
+        print("ACTIVE TASKS",self.active_tasks,[f.done() for f in self.futures])
 
     def _fetch_and_enqueue_next_element(self):
         while self.available_count - self.current_count < self.queue_size:
+            print("DOING THE WORK",self.available_count,self.current_count,self.queue_size)
             element = self._get_next_element()
+            print("DID THE WORK",element)
             if element is None:
                 self._queue.put(None)
                 break
             self._queue.put(element)
+            self.queue_index+=1
+
+        self.active_tasks -= 1
+        print("GOT HERE SOMEHOW",self.available_count,self.current_count,self.queue_size,"active tasks",self.active_tasks)
+        
 
     def get_next_element(self, count=None):
+
+
+        print("WE ARE HERE",count,self.current_count,self.available_count,self.queue_size)
+
         if count is not None:
             self.current_count = count
 
         current_element = self.movie_elements_table.find_one(
             movie_id=self.movie_id, count=self.current_count)
+        
+        #also pop from the queue if we're in the right zone to do so
+        if self.available_count - self.current_count < self.queue_size:
+            self._queue.get()
+
 
         if current_element is None:
             found_count = -1
@@ -190,7 +220,9 @@ class MovieGeneratorWrapper:
 
         if current_element is not None:
             if self.available_count - self.current_count < self.queue_size:
+                print("FETCHING NEXT ELEMENT")
                 self._fetch_next_element()
+                
 
             current_element = {k: v for k,
                                v in current_element.items() if v is not None}
@@ -326,9 +358,10 @@ if __name__ == '__main__':
                         default="collage, grayscale, text, watermark, lowres, bad anatomy, bad hands, text, error, missing fingers, cropped, worst quality, low quality, normal quality, jpeg artifacts, watermark, blurry, grayscale, deformed weapons, deformed face, deformed human body",
                         help="negative prompt")
 
+    #this argument is use to specify (more than one) file with template overrides, to it should be a list[string]
     parser.add_argument('--extraTemplatesFile', type=str,
-                        default=None,
-                        help="file with template overrides")
+                        nargs='+', help="extra templates file")
+                        
 
     parser.add_argument('--ntrials', type=int, default=5,
                         help='Number of trials (default: 5)')
@@ -374,6 +407,34 @@ if __name__ == '__main__':
     #add useGPTForChatCompletion argument
     parser.add_argument('--useGPTForChatCompletion', action='store_true',
                         help='Use GPT for chat completion')
+    
+    #controlnet_diffusion_model
+    parser.add_argument('--controlnet_diffusion_model', type=str, default="D:/img/auto1113/stable-diffusion-webui/models/Stable-diffusion/abyssorangemix3AOM3_aom3a1b.safetensors",
+                        help='controlnet diffusion model')
+
+    #if --doNotSaveMemory is passed, then saveMemory is set to False
+    #otherwise, saveMemory is set to True
+    parser.add_argument('--doNotSaveMemory', dest='saveMemory', action='store_false')
+
+    #how much to decimate talking head video
+    parser.add_argument('--decimate_talking_head', type=int, default=1,
+                        help='Decimate talking head video (default: 1)')
+    
+
+    #how many steps to take when generating faces
+    parser.add_argument('--numFaceSteps', type=int, default=20,
+                        help='Number of face steps (default: 50)')
+    
+
+    #audio model
+    parser.add_argument('--audioModel', type=str, default="cvssp/audioldm-s-full-v2",
+                        help='audio model')
+    
+
+    #use_GPT4
+    parser.add_argument('--use_GPT4', action='store_true',
+                        help='Use GPT4')
+
 
     args = parser.parse_args()
 
@@ -392,6 +453,8 @@ if __name__ == '__main__':
     # database
     db = dataset.connect('sqlite:///movie_elements.db')
 
+    print("USING GPT",args.useGPTForChatCompletion)
+
     animeBuilder = AnimeBuilder(num_inference_steps=args.numInferenceSteps,
                                 #textModel="GPT3",
                                 #textModel='EleutherAI/gpt-neo-2.7B',
@@ -404,19 +467,50 @@ if __name__ == '__main__':
                                 musicDuration=args.musicDuration,
                                 imageSizes=args.imageSizes,
                                 portraitPrompt=args.portraitPrompt,
+                                controlnet_diffusion_model=args.controlnet_diffusion_model,
+                                saveMemory=args.saveMemory,
+                                talking_head_decimate=args.decimate_talking_head,
+                                face_steps=args.numFaceSteps,
+                                audioLDM=args.audioModel,
+                                use_GPT4=args.use_GPT4
                                 )
     
 
     print("DOING GEN")
-    animeBuilder.doGen("test"*100,num_inference_steps=args.numInferenceSteps)
+    animeBuilder.doGen("a girl sitting in her bedroom",num_inference_steps=args.numInferenceSteps)
     print("DONE GEN")
 
-    if args.extraTemplatesFile:
-        with open(args.extraTemplatesFile, "r") as file:
-            code = file.read()
-            templateOverrides = eval(code)
-            for k, v in templateOverrides.items():
-                animeBuilder.templates[k] = v
+    if args.extraTemplatesFile is  not None:
+
+        for extraTemplatesFile in args.extraTemplatesFile:
+            print("reading templates from",extraTemplatesFile)
+            #does it end in .py or .txt
+            if extraTemplatesFile.endswith(".py"):
+                with open(extraTemplatesFile, "r") as file:
+                    code = file.read()
+                    templateOverrides = eval(code)
+                    for k, v in templateOverrides.items():
+                        print("setting template",k)
+                        animeBuilder.templates[k] = v
+            elif extraTemplatesFile.endswith(".txt"):
+                #split on ===
+                #the key is the first line (minus ininitail >)
+                #the value is the rest of the file
+                with open(extraTemplatesFile, "r") as file:
+                    text = file.read()
+                    templates = text.split("===")
+                    for template in templates:
+                        #remove leading and trailing whitespace
+                        template = template.strip()
+                        lines = template.split("\n")                    
+                        key = lines[0][1:].strip()
+                        if key=="":
+                            print("ERROR\n>>>"+template+"<<<\n")
+                            continue
+                        value = "\n".join(lines[1:])
+                        print("template:",key)
+                        animeBuilder.templates[key] = value
+
 
     if args.ngrok:
         run_with_ngrok(app, auth_token=os.environ["NGROK_TOKEN"])
