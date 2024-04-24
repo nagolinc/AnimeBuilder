@@ -17,3 +17,5 @@ to create a simple animation
 
 Use the included notebook (createAnime.pynb) to watch anime
 
+This project can be used to create animated movies like [this](https://www.youtube.com/watch?v=wfgjh6bbyuI)
+
